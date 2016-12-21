@@ -383,11 +383,6 @@ class MusicBot(discord.Client):
         await self.update_now_playing(entry)
         player.skip_state.reset()
 
-        for user in self.config.lastfm_users:
-            print("Scrobbling this track for " + str(user))
-            self.lastfm.update_now_playing(user,entry.title)
-
-
         channel = entry.meta.get('channel', None)
         author = entry.meta.get('author', None)
 
@@ -412,6 +407,9 @@ class MusicBot(discord.Client):
                 self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_edit_message(last_np_msg, newmsg, send_if_fail=True)
             else:
                 self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_send_message(channel, newmsg)
+            
+            # Apply Scrobble delay as Last.fm API suggests it.
+            asyncio.ensure_future(self.scrobble_after_some_time(player))
 
     async def on_player_resume(self, entry, **_):
         await self.update_now_playing(entry)
@@ -422,10 +420,47 @@ class MusicBot(discord.Client):
     async def on_player_stop(self, **_):
         await self.update_now_playing()
 
-    async def on_player_finished_playing(self, player, **_):
-        for user in self.config.lastfm_users:
-            self.lastfm.scrobble(user)
+    async def scrobble_after_some_time(self,player):
+        if player.current_entry:
+            duration = player.current_entry.duration
+            time_to_wait = duration / 2
 
+            members = player.voice_client.channel.voice_members
+
+            if self.config.lastfm_scrobbledelay != 0:
+                time_to_wait = self.config.lastfm_scrobbledelay
+            
+            for user in self.config.lastfm_users:
+                lastfm_user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(user)]
+
+                for member in members:
+                    user_id = member.id
+
+                    if user_id == lastfm_user_id:
+                        self.lastfm.update_now_playing(user,player.current_entry.title,time_to_wait)
+
+            # If the track is very long(>30 min), scrobble after 4 minutes
+            if duration >= 30 * 60:
+                time_to_wait = 240
+
+            
+            print("Waiting {} seconds before scrobbling ".format(str(time_to_wait)))
+            await asyncio.sleep(time_to_wait)
+
+
+            # Actually scrobble
+            # THINK : if player is paused, this method will still be called regardless,what to do ? :thinking:
+            for user in self.config.lastfm_users:
+                # Check if this user is in channel
+                lastfm_user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(user)]
+
+                for member in members:
+                    user_id = member.id
+
+                    if user_id == lastfm_user_id:
+                        self.lastfm.scrobble(user)
+
+    async def on_player_finished_playing(self, player, **_):
         if not player.playlist.entries and not player.current_entry and self.config.auto_playlist:
             while self.autoplaylist:
                 song_url = choice(self.autoplaylist)
@@ -849,29 +884,36 @@ class MusicBot(discord.Client):
                     user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(username)]
 
                     if user_id == message.author.id:
-                        self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = password
-                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
+                        # First call this before saving because if the password is wrong,it will throw an error
+                        try:
+                            self.lastfm.InitializeUser(username,password)
 
-                        self.lastfm.InitializeUser(username,password)
+                            self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = password
+                            self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
 
-                        return Response("Thanks! Your password has been replaced.")
+                            return Response("Thanks! Your password has been replaced.")
+                        except:
+                            return Response("An error has occured.Your credentials could be incorrect or Last.fm API might be down.")    
                     else:
                         return Response("Did you think I wouldnt think about this? :LUL: ", reply=True)
                 else:
                     if password == None:
                         return Response("To enable,password is required.",reply=True)
-                        
-                    self.config.lastfm_users.append(username)
-                    self.config.lastfm_passwords.append(password)
-                    self.config.lastfm_user_ids.append(message.author.id)
+                    
+                    try:
+                        self.lastfm.InitializeUser(username,password)
 
-                    self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
-                    self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
-                    self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
+                        self.config.lastfm_users.append(username)
+                        self.config.lastfm_passwords.append(password)
+                        self.config.lastfm_user_ids.append(message.author.id)
 
-                    self.lastfm.InitializeUser(username,password)
+                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
+                        self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
+                        self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
 
-                    return Response("Thanks! You have enabled scrobbling support for your Last.fm account {}".format(username))
+                        return Response("Thanks! You have enabled scrobbling support for your Last.fm account {}".format(username))
+                    except:
+                        return Response("An error has occured.Your credentials could be incorrect or Last.fm API might be down.")    
 
             if(command == 'disable'):
                 if(username in self.config.lastfm_users):

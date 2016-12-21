@@ -9,7 +9,7 @@ class YoutubeTitleParser(object):
         self.song_name = ''
         self.artist_name = ''
         from musicbot.helpers import separators
-        # from helpers import separators
+        #from helpers import separators
         self.separators = separators
         if title:
             self.split_artist_title(title)

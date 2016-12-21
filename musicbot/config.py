@@ -89,6 +89,7 @@ class Config:
         self.lastfm_user_ids = config.get('Lastfm','Ids',fallback=ConfigDefaults.lastfm_user_ids)
         self.lastfm_users = config.get('Lastfm','Users',fallback=ConfigDefaults.lastfm_users)
         self.lastfm_passwords = config.get('Lastfm','Passwords',fallback=ConfigDefaults.lastfm_passwords)
+        self.lastfm_scrobbledelay = config.getint('Lastfm','ScrobbleDelay',fallback=ConfigDefaults.lastfm_scrobbledelay)
 
         self.lastfm_user_ids = list(x for x in self.lastfm_user_ids.split() if x)
         self.lastfm_users = list(x for x in self.lastfm_users.split() if x)
@@ -203,6 +204,7 @@ class ConfigDefaults:
     lastfm_users = list()
     lastfm_passwords = list()
     lastfm_user_ids = list()
+    lastfm_scrobbledelay = 0 # 0 means half of the duration
 
     default_volume = 0.15
     skips_required = 4

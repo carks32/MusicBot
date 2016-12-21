@@ -5,7 +5,7 @@ LASTFM_API_KEY = "1c15b9ea24af56c25eac1d40b24cf6b5"
 LASTFM_API_SECRET = "2fc65d3ac585f3738b8c56a8b6013d6f"
 
 from musicbot.core import YoutubeTitleParser
-# from core import YoutubeTitleParser
+#from core import YoutubeTitleParser
 import time
 
 
@@ -31,7 +31,7 @@ class Lastfm:
 
         self.userNetworks[user] = network
 
-    def update_now_playing(self,user,title):
+    def update_now_playing(self,user,title,duration):
         if user in self.userNetworks:
             network = self.userNetworks[user]
 
@@ -48,9 +48,9 @@ class Lastfm:
                 song_name = firstResult.get_correction()
                 artist_name = str(firstResult.get_artist())
             
-            network.update_now_playing(artist=artist_name, title=song_name,duration=5)
+                network.update_now_playing(artist=artist_name, title=song_name,duration=duration)
 
-            self.scrobbleCache[user] = title
+                self.scrobbleCache[user] = title
 
     def scrobble(self,user):
         if user in self.userNetworks:
@@ -73,14 +73,12 @@ class Lastfm:
                         song_name = firstResult.get_correction()
                         artist_name = str(firstResult.get_artist())
 
-                    network.scrobble(artist=artist_name, title=song_name, timestamp=int(time.time()))
+                        network.scrobble(artist=artist_name, title=song_name, timestamp=int(time.time()))
 
                     del self.scrobbleCache[user]
 
     def add_tags_from_video_title(self,user,title,tags):
         track = self.get_track_from_video_title(user,title)
-
-        print(track)
         if track != None:
             tags = tags.split(",")
             try:
@@ -233,6 +231,22 @@ class Lastfm:
         
         markdown = "```Markdown\nLast.fm overview of {}\n\n* Total Scrobbles: {}\n\n* Top Artists \n{}\n\n* Top Albums \n{}\n\n* Tags set by {} \n{}\n\n```".format(user,total_play_count,artistText,albumsText,user,tagsByUserText)
         return markdown
+    
+    def get_user_albums(self,user):
+        network = self.userNetworks['arkenthera']
+        lastfm_user = network.get_user(user)
+
+        library = lastfm_user.get_library()
+        libUser = library.get_user()
+
+        return libUser.get_top_albums()
+
+    def compare_users(self,user1,user2):
+        albumsA = self.get_user_albums(user1)
+        albumsB = self.get_user_albums(user2)
+
+        for album in albumsA:
+            print(dir(album))
 
 
         
