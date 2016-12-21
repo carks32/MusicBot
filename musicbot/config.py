@@ -5,6 +5,7 @@ import configparser
 
 from .exceptions import HelpfulError
 
+from musicbot.utils import load_file, write_file, sane_round_int
 
 class Config:
     def __init__(self, config_file):
@@ -45,6 +46,12 @@ class Config:
         config = configparser.ConfigParser(interpolation=None)
         config.read(config_file, encoding='utf-8')
 
+        self.config_obj = config
+
+        
+
+
+
         confsections = {"Credentials", "Permissions", "Chat", "MusicBot"}.difference(config.sections())
         if confsections:
             raise HelpfulError(
@@ -79,11 +86,29 @@ class Config:
         self.delete_invoking = config.getboolean('MusicBot', 'DeleteInvoking', fallback=ConfigDefaults.delete_invoking)
         self.debug_mode = config.getboolean('MusicBot', 'DebugMode', fallback=ConfigDefaults.debug_mode)
 
+        self.lastfm_user_ids = config.get('Lastfm','Ids',fallback=ConfigDefaults.lastfm_user_ids)
+        self.lastfm_users = config.get('Lastfm','Users',fallback=ConfigDefaults.lastfm_users)
+        self.lastfm_passwords = config.get('Lastfm','Passwords',fallback=ConfigDefaults.lastfm_passwords)
+
+        self.lastfm_user_ids = list(x for x in self.lastfm_user_ids.split() if x)
+        self.lastfm_users = list(x for x in self.lastfm_users.split() if x)
+        self.lastfm_passwords = list(x for x in self.lastfm_passwords.split() if x)
+
+        self.lastfm_user_ids = list(item.replace(',', ' ').strip() for item in self.lastfm_user_ids)
+        self.lastfm_users = list(item.replace(',', ' ').strip() for item in self.lastfm_users)
+        self.lastfm_passwords = list(item.replace(',', ' ').strip() for item in self.lastfm_passwords)
+
         self.blacklist_file = config.get('Files', 'BlacklistFile', fallback=ConfigDefaults.blacklist_file)
         self.auto_playlist_file = config.get('Files', 'AutoPlaylistFile', fallback=ConfigDefaults.auto_playlist_file)
 
         self.run_checks()
 
+
+    def set_value(self,key1,key2,value):
+        self.config_obj.set(key1,key2,value)
+        with open(self.config_file,'w', encoding='utf8') as f:
+            self.config_obj.write(f)
+        
 
     def run_checks(self):
         """
@@ -175,6 +200,9 @@ class ConfigDefaults:
     command_prefix = '!'
     bound_channels = set()
     autojoin_channels = set()
+    lastfm_users = list()
+    lastfm_passwords = list()
+    lastfm_user_ids = list()
 
     default_volume = 0.15
     skips_required = 4
@@ -191,6 +219,7 @@ class ConfigDefaults:
     options_file = 'config/options.ini'
     blacklist_file = 'config/blacklist.txt'
     auto_playlist_file = 'config/autoplaylist.txt' # this will change when I add playlists
+    lastfm_auth_file = 'config/lastfm.ini'
 
 # These two are going to be wrappers for the id lists, with add/remove/load/save functions
 # and id/object conversion so types aren't an issue

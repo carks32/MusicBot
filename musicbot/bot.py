@@ -7,6 +7,7 @@ import inspect
 import aiohttp
 import discord
 import asyncio
+import pylast
 import traceback
 
 from discord import utils
@@ -27,6 +28,7 @@ from musicbot.player import MusicPlayer
 from musicbot.config import Config, ConfigDefaults
 from musicbot.permissions import Permissions, PermissionsDefaults
 from musicbot.utils import load_file, write_file, sane_round_int
+from musicbot.lastfm import Lastfm
 
 from . import exceptions
 from . import downloader
@@ -94,6 +96,8 @@ class MusicBot(discord.Client):
         super().__init__()
         self.aiosession = aiohttp.ClientSession(loop=self.loop)
         self.http.user_agent += ' MusicBot/%s' % BOTVERSION
+
+        self.lastfm = Lastfm(self.config.lastfm_users,self.config.lastfm_passwords)
 
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
@@ -379,6 +383,11 @@ class MusicBot(discord.Client):
         await self.update_now_playing(entry)
         player.skip_state.reset()
 
+        for user in self.config.lastfm_users:
+            print("Scrobbling this track for " + str(user))
+            self.lastfm.update_now_playing(user,entry.title)
+
+
         channel = entry.meta.get('channel', None)
         author = entry.meta.get('author', None)
 
@@ -414,6 +423,9 @@ class MusicBot(discord.Client):
         await self.update_now_playing()
 
     async def on_player_finished_playing(self, player, **_):
+        for user in self.config.lastfm_users:
+            self.lastfm.scrobble(user)
+
         if not player.playlist.entries and not player.current_entry and self.config.auto_playlist:
             while self.autoplaylist:
                 song_url = choice(self.autoplaylist)
@@ -719,6 +731,168 @@ class MusicBot(discord.Client):
 
         print()
         # t-t-th-th-that's all folks!
+    
+    async def cmd_lastfm(self,message,username=None):
+        if username == None:
+                # Find username from author
+                user_id = message.author.id
+
+                if user_id in self.config.lastfm_user_ids:
+                    index = self.config.lastfm_user_ids.index(user_id)
+                    username = self.config.lastfm_users[index]
+
+        if username == None:
+            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
+        try:
+            markdown = self.lastfm.get_user_summary(username)
+            return Response(markdown)
+        except:
+            return Response("There was a problem retrieving Last.fm summary.",reply=True,delete_after=30)
+
+    async def cmd_nowplaying(self,message,username=None):
+        if username == None:
+                # Find username from author
+                user_id = message.author.id
+
+                if user_id in self.config.lastfm_user_ids:
+                    index = self.config.lastfm_user_ids.index(user_id)
+                    username = self.config.lastfm_users[index]
+
+        if username == None:
+            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
+        markdown = self.lastfm.get_now_playing(username)
+        return Response(markdown)
+
+    async def cmd_addtags(self,player,message,tags,username=None):
+        """
+        Usage:
+            {command_prefix}addtags [tags] [username]
+
+        Adds tags to the currently playing song.Requires auth through PMing bot. See !help lastfmsupport
+        Song has to be found by title.
+        Tags can be seperated by comma.
+        TAGS SHOULDNT HAVE WHITESPACES !!!!
+        """
+
+        title = player.current_entry.title
+
+        if len(title) > 0:
+            if username == None:
+                # Find username from author
+                user_id = message.author.id
+
+                if user_id in self.config.lastfm_user_ids:
+                    index = self.config.lastfm_user_ids.index(user_id)
+                    username = self.config.lastfm_users[index]
+
+            if username == None:
+                return Response("User could not be found. This command requires authentication. See !help lastfmsupport",reply=True,delete_after=60)
+            try:
+                if self.lastfm.add_tags_from_video_title(username,title,tags):
+                    return Response(":thumbsup:",reply=True,delete_after=30)
+                else:
+                    return Response("There was a problem adding tags to the currently playing song",reply=True,delete_after=30)    
+            except:
+                return Response("There was a problem adding tags to the currently playing song",reply=True,delete_after=30)
+
+    async def cmd_tags(self,player,message,username=None):
+        """
+        Usage:
+            {command_prefix}tags [username]
+
+        Displays the tags of the currently playing song for the user. If the username isnt specified, it will look for the database. See !help lastfmsupport
+        Song has to be found by title.
+        """
+
+        if player.is_playing or player.is_paused:
+            title = player.current_entry.title
+
+            if len(title) > 0:
+                if username == None:
+                    # Find username from author
+                    user_id = message.author.id
+
+                    if user_id in self.config.lastfm_user_ids:
+                        index = self.config.lastfm_user_ids.index(user_id)
+                        username = self.config.lastfm_users[index]
+
+                if username == None:
+                    return Response("User could not be found. Try following up the command with your last.fm username",reply=True,delete_after=60)
+
+                tags = self.lastfm.get_user_tags_from_video_title(username,title)
+
+                if tags != None:
+                    markdown = " your tags for the currently playing song : "
+                    for tag in tags:
+                        markdown += "**{}**,".format(tag.name)
+                    return Response(markdown,reply=True,delete_after=60)
+                else:
+                    return Response("Song was not found on Last.fm",delete_after=30)
+
+    async def cmd_lastfmsupport(self,message,command,username,password=None):
+        """
+        Usage:
+            {command_prefix}lastfmsupport [action] [username] [password]
+
+        This command only works by PMing the bot.
+        Enables last.fm scrobbling through our voice channel.
+        To enable scrobbling,PM the bot like this: !lastfmsupport enable arkenthera mysickpassword
+        To disable scrobbling,PM the bot like this: !lastfmsupport disable arkenthera
+        """
+
+        if(message.channel.is_private):
+            password = pylast.md5(password)
+
+
+            if(command == 'enable'):
+                if(username in self.config.lastfm_users):
+                    user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(username)]
+
+                    if user_id == message.author.id:
+                        self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = password
+                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
+
+                        self.lastfm.InitializeUser(username,password)
+
+                        return Response("Thanks! Your password has been replaced.")
+                    else:
+                        return Response("Did you think I wouldnt think about this? :LUL: ", reply=True)
+                else:
+                    if password == None:
+                        return Response("To enable,password is required.",reply=True)
+                        
+                    self.config.lastfm_users.append(username)
+                    self.config.lastfm_passwords.append(password)
+                    self.config.lastfm_user_ids.append(message.author.id)
+
+                    self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
+                    self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
+                    self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
+
+                    self.lastfm.InitializeUser(username,password)
+
+                    return Response("Thanks! You have enabled scrobbling support for your Last.fm account {}".format(username))
+
+            if(command == 'disable'):
+                if(username in self.config.lastfm_users):
+                    password = self.config.lastfm_passwords[self.config.lastfm_users.index(username)]
+                    user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(username)]
+
+                    if user_id == message.author.id:
+                        self.config.lastfm_passwords.remove(password)
+                        self.config.lastfm_users.remove(username)
+                        self.config.lastfm_user_ids.remove(message.author.id)
+
+                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
+                        self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
+                        self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
+
+                        return Response("Disabled Last.fm support for your account.", reply=True)
+                    else:
+                        return Response("Did you think I wouldnt think about this? :LUL: ", reply=True)
+
+        else:
+            return Response("This command meant to be used via PMing the bot.", reply=True, delete_after=60)
 
     async def cmd_help(self, command=None):
         """
@@ -1258,7 +1432,7 @@ class MusicBot(discord.Client):
 
         return Response("Oh well :frowning:", delete_after=30)
 
-    async def cmd_np(self, player, channel, server, message):
+    async def cmd_np(self, player, channel, server, message,username=None):
         """
         Usage:
             {command_prefix}np
@@ -1834,9 +2008,11 @@ class MusicBot(discord.Client):
             return
 
         if message.channel.is_private:
-            if not (message.author.id == self.config.owner_id and command == 'joinserver'):
-                await self.send_message(message.channel, 'You cannot use this bot in private messages.')
-                return
+            print("Private message command" + str(command))
+            if command != 'lastfmsupport':
+                if not (message.author.id == self.config.owner_id and command == 'joinserver'):
+                    await self.send_message(message.channel, 'You cannot use this bot in private messages.')
+                    return
 
         if message.author.id in self.blacklist and message.author.id != self.config.owner_id:
             self.safe_print("[User blacklisted] {0.id}/{0.name} ({1})".format(message.author, message_content))
