@@ -86,18 +86,15 @@ class Config:
         self.delete_invoking = config.getboolean('MusicBot', 'DeleteInvoking', fallback=ConfigDefaults.delete_invoking)
         self.debug_mode = config.getboolean('MusicBot', 'DebugMode', fallback=ConfigDefaults.debug_mode)
 
+
+        #
         self.lastfm_user_ids = config.get('Lastfm','Ids',fallback=ConfigDefaults.lastfm_user_ids)
         self.lastfm_users = config.get('Lastfm','Users',fallback=ConfigDefaults.lastfm_users)
         self.lastfm_passwords = config.get('Lastfm','Passwords',fallback=ConfigDefaults.lastfm_passwords)
         self.lastfm_scrobbledelay = config.getint('Lastfm','ScrobbleDelay',fallback=ConfigDefaults.lastfm_scrobbledelay)
-
-        self.lastfm_user_ids = list(x for x in self.lastfm_user_ids.split() if x)
-        self.lastfm_users = list(x for x in self.lastfm_users.split() if x)
-        self.lastfm_passwords = list(x for x in self.lastfm_passwords.split() if x)
-
-        self.lastfm_user_ids = list(item.replace(',', ' ').strip() for item in self.lastfm_user_ids)
-        self.lastfm_users = list(item.replace(',', ' ').strip() for item in self.lastfm_users)
-        self.lastfm_passwords = list(item.replace(',', ' ').strip() for item in self.lastfm_passwords)
+        self.lastfm_api_key = config.get('Lastfm','api_key',fallback=ConfigDefaults.lastfm_api_key)
+        self.lastfm_api_secret = config.get('Lastfm','api_secret',fallback=ConfigDefaults.lastfm_api_secret)
+        #
 
         self.blacklist_file = config.get('Files', 'BlacklistFile', fallback=ConfigDefaults.blacklist_file)
         self.auto_playlist_file = config.get('Files', 'AutoPlaylistFile', fallback=ConfigDefaults.auto_playlist_file)
@@ -179,11 +176,54 @@ class Config:
                 print("[Warning] AutojoinChannels data invalid, will not autojoin any channels")
                 self.autojoin_channels = set()
 
+        #
+        if self.lastfm_user_ids:
+            try:
+                self.lastfm_user_ids = list(x for x in self.lastfm_user_ids.split() if x)
+            except:
+                print("[Warning] Error parsing Last.fm User IDs. Last.fm functionality might not work.")
+                self.lastfm_user_ids = list()
+
+        if self.lastfm_users:
+            try:
+                self.lastfm_users = list(x for x in self.lastfm_users.split() if x)
+            except:
+                print("[Warning] Error parsing Last.fm User names. Last.fm functionality might not work.")
+                self.lastfm_users = list()
+
+        if self.lastfm_passwords:
+            try:
+                self.lastfm_passwords = list(x for x in self.lastfm_passwords.split() if x)
+            except:
+                print("[Warning] Error parsing Last.fm passwords. Last.fm functionality might not work.")
+                self.lastfm_users = list()
+
+
+        if len(self.lastfm_users) == 0 or len(self.lastfm_user_ids) == 0 or len(self.lastfm_passwords) == 0:
+            raise HelpfulError(
+                "No Last.fm account found.",
+                "Last.fm functionality requires to have at least one user set in the config.",
+                preface=confpreface)
+
+        if len(self.lastfm_api_key) == 0 or len(self.lastfm_api_secret) == 0:
+            raise HelpfulError(
+                "No Last.fm credentials found.",
+                "Please set api_key and api_secret parameters.",
+                preface=confpreface)
+        #
+
+
         self.delete_invoking = self.delete_invoking and self.delete_messages
 
         self.bound_channels = set(item.replace(',', ' ').strip() for item in self.bound_channels)
 
         self.autojoin_channels = set(item.replace(',', ' ').strip() for item in self.autojoin_channels)
+
+        self.lastfm_user_ids = list(item.replace(',', ' ').strip() for item in self.lastfm_user_ids)
+
+        self.lastfm_users = list(item.replace(',', ' ').strip() for item in self.lastfm_users)
+
+        self.lastfm_passwords = list(item.replace(',', ' ').strip() for item in self.lastfm_passwords)
 
     # TODO: Add save function for future editing of options with commands
     #       Maybe add warnings about fields missing from the config file
@@ -201,10 +241,15 @@ class ConfigDefaults:
     command_prefix = '!'
     bound_channels = set()
     autojoin_channels = set()
+
+    #
     lastfm_users = list()
     lastfm_passwords = list()
     lastfm_user_ids = list()
     lastfm_scrobbledelay = 0 # 0 means half of the duration
+    lastfm_api_key = '' # Dont add your credential here
+    lastfm_api_secret = '' # Dont add your credential here
+    #
 
     default_volume = 0.15
     skips_required = 4

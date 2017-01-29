@@ -29,6 +29,7 @@ from musicbot.config import Config, ConfigDefaults
 from musicbot.permissions import Permissions, PermissionsDefaults
 from musicbot.utils import load_file, write_file, sane_round_int
 from musicbot.lastfm import Lastfm
+from musicbot.chartmaker import ChartMaker
 
 from . import exceptions
 from . import downloader
@@ -97,7 +98,7 @@ class MusicBot(discord.Client):
         self.aiosession = aiohttp.ClientSession(loop=self.loop)
         self.http.user_agent += ' MusicBot/%s' % BOTVERSION
 
-        self.lastfm = Lastfm(self.config.lastfm_users,self.config.lastfm_passwords)
+        self.lastfm = Lastfm(self.config)
 
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
@@ -444,7 +445,7 @@ class MusicBot(discord.Client):
                 time_to_wait = 240
 
             
-            print("Waiting {} seconds before scrobbling ".format(str(time_to_wait)))
+            #print("Waiting {} seconds before scrobbling ".format(str(time_to_wait)))
             await asyncio.sleep(time_to_wait)
 
 
@@ -766,8 +767,97 @@ class MusicBot(discord.Client):
 
         print()
         # t-t-th-th-that's all folks!
+    async def cmd_bandinfo(self,message,bandName=None):
+        split = message.content.split('!bandinfo ')
+        try:
+            bandName = split[1]
+            if bandName != None:
+                artistInfo = self.lastfm.get_artist_info(bandName)
+                return Response(artistInfo)
+        except:
+            return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
+
+
+    async def cmd_band(self,message,bandName=None):
+        split = message.content.split('!band ')
+        try:
+            info = split[1].split(" ")
+            userName = info[0]
+            bandName = split[1].split(userName + " ")[1]
+            
+
+            if userName == None or len(userName) == 0 or bandName == None or len(bandName) == 0:
+                return Response("There was an error with your command. Sorry!",delete_after=30)
+
+            artistInfo = self.lastfm.get_user_artist_info(userName,bandName)
+            return Response(artistInfo)
+        except Exception as e:
+            print(e)
+            return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
+
+    async def chart_done_callback(self,file,channel):
+        with open(file, 'rb') as f:
+            await self.send_file(channel, file)
+        
+        
+
+    async def cmd_chart(self,message,userName,t=None,size=None):
+        """
+        Usage:
+            {command_prefix}chart [username] [type] [size]
+
+        Returns Last.fm chart by using album info then constructs an image.
+        Valid types: 7day 1month 3month 6month 12month overall
+        Valid sizes: 3x3 4x4 5x5 10x10
+
+        Default options are type: overall, size: 5x5
+        """        
+        # Check if valid
+        valid_types = ["7day","1month","3month","6month","12month","overall"]
+        valid_sizes = ["3x3","4x4","5x5","10x10"]
+
+        if t == None:
+            t = "overall"
+
+        if size == None:
+            size = "5x5"
+
+
+        if size not in valid_sizes:
+            valid_sizes_str = ""
+            for s in valid_sizes:
+                valid_sizes_str += s + " "
+            return Response("You inputted an invalid size <:DD:260520559383805952>. Here are the valid sizes: `{}`".format(valid_sizes_str))
     
+        if size == "3x3":
+            size = 3
+
+        if size == "4x4":
+            size = 4
+
+        if size == "5x5":
+            size = 5
+
+        if size == "10x10":
+            size = 10
+
+
+        if t not in valid_types:
+            valid_types_str = ""
+            for tt in valid_types:
+                valid_types_str += tt + " "
+            
+            return Response("You inputted an invalid type <:DD:260520559383805952>. Here are the valid types: `{}`".format(valid_types_str))
+        
+        cm = ChartMaker(self.chart_done_callback,message.channel,self.lastfm,userName,size,t)
+
     async def cmd_lastfm(self,message,username=None):
+        """
+        Usage:
+            {command_prefix}lastfm [username]
+
+        Returns Last.fm summary of the user.
+        """
         if username == None:
                 # Find username from author
                 user_id = message.author.id
@@ -785,6 +875,12 @@ class MusicBot(discord.Client):
             return Response("There was a problem retrieving Last.fm summary.",reply=True,delete_after=30)
 
     async def cmd_nowplaying(self,message,username=None):
+        """
+        Usage:
+            {command_prefix}nowplaying [username]
+
+        Returns Last.fm 'currently scrobbling' song.
+        """        
         if username == None:
                 # Find username from author
                 user_id = message.author.id
@@ -876,7 +972,8 @@ class MusicBot(discord.Client):
         """
 
         if(message.channel.is_private):
-            password = pylast.md5(password)
+            md5password = pylast.md5(password)
+            password = md5password
 
 
             if(command == 'enable'):
@@ -886,9 +983,9 @@ class MusicBot(discord.Client):
                     if user_id == message.author.id:
                         # First call this before saving because if the password is wrong,it will throw an error
                         try:
-                            self.lastfm.InitializeUser(username,password)
+                            self.lastfm.InitializeUser(username,md5password)
 
-                            self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = password
+                            self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = md5password
                             self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
 
                             return Response("Thanks! Your password has been replaced.")
@@ -901,7 +998,7 @@ class MusicBot(discord.Client):
                         return Response("To enable,password is required.",reply=True)
                     
                     try:
-                        self.lastfm.InitializeUser(username,password)
+                        self.lastfm.InitializeUser(username,md5password)
 
                         self.config.lastfm_users.append(username)
                         self.config.lastfm_passwords.append(password)
