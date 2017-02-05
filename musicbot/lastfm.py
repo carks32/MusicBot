@@ -1,5 +1,6 @@
 import pylast
 import time
+from .database import LastFmSQLiteDatabase
 
 
 class Lastfm:
@@ -8,25 +9,19 @@ class Lastfm:
 
         self.userNetworks = dict()
 
-        self.parser = YoutubeTitleParser()
-        self.scrobbleCache = dict()
-
         self.api_key = config.lastfm_api_key
         self.api_secret = config.lastfm_api_secret
+        self.db = LastFmSQLiteDatabase("lastfm.sqlite")
 
-        users = config.lastfm_users
-        passwords = config.lastfm_passwords
+        user = config.lastfm_username
+        password = config.lastfm_password
 
-        for user in users:
-            index = users.index(user)
-            password = passwords[index]
-
-            try:
-                print("Trying to login as {}-{}".format(user,password))
-                self.InitializeUser(user,password)
-            except Exception as exception:
-                print(exception)
-                print("[Warning] Last.fm credentials are incorrect for some users.")
+        try:
+            print("Trying to login as {}-{}".format(user,password))
+            self.InitializeUser(user,pylast.md5(password))
+        except Exception as exception:
+            print(exception)
+            print("[Warning] Last.fm credentials are incorrect for some users.")
 
 
     
@@ -34,107 +29,10 @@ class Lastfm:
         network = pylast.LastFMNetwork(api_key = self.api_key, api_secret =
             self.api_secret, username = user, password_hash = password)
 
-        self.userNetworks[user] = network
+        self.default_network = network
 
     def get_default_user_network(self):
-        for key,value in self.userNetworks.items():
-            # Awful hack
-            return value
-
-    def update_now_playing(self,user,title,duration):
-        if user in self.userNetworks:
-            network = self.userNetworks[user]
-
-            parser = YoutubeTitleParser()
-            parser.split_artist_title(title)
-
-            song_name = parser.song_name
-            artist_name = parser.artist_name
-
-            search = network.search_for_track(artist_name,song_name)
-            next_page = search.get_next_page()
-            if(len(next_page) > 0):
-                firstResult = next_page[0]
-                song_name = firstResult.get_correction()
-                artist_name = str(firstResult.get_artist())
-            
-                network.update_now_playing(artist=artist_name, title=song_name,duration=duration)
-
-                self.scrobbleCache[user] = title
-
-    def scrobble(self,user):
-        if user in self.userNetworks:
-            network = self.userNetworks[user]
-
-            if user in self.scrobbleCache:
-                title = self.scrobbleCache[user]
-
-                if len(title) > 0:
-                    parser = YoutubeTitleParser()
-                    parser.split_artist_title(title)
-
-                    song_name = parser.song_name
-                    artist_name = parser.artist_name
-
-                    search = network.search_for_track(artist_name,song_name)
-                    next_page = search.get_next_page()
-                    if(len(next_page) > 0):
-                        firstResult = next_page[0]
-                        song_name = firstResult.get_correction()
-                        artist_name = str(firstResult.get_artist())
-
-                        network.scrobble(artist=artist_name, title=song_name, timestamp=int(time.time()))
-
-                    del self.scrobbleCache[user]
-
-    def add_tags_from_video_title(self,user,title,tags):
-        track = self.get_track_from_video_title(user,title)
-        if track != None:
-            tags = tags.split(",")
-            try:
-                track.add_tags(tags)
-                return True
-            except:
-                return False
-
-        else:
-            return False
-
-
-    def get_user_tags_from_video_title(self,user,title):
-        track = self.get_track_from_video_title(user,title)
-        if track != None:
-            tags = track.get_tags()
-            if len(tags) > 0:
-                return tags
-            else:
-                return None
-        else:
-            return None
-
-    
-    def get_track_from_video_title(self,user,title):
-        if user in self.userNetworks:
-            network = self.userNetworks[user]
-            if len(title) > 0:
-                parser = YoutubeTitleParser()
-                parser.split_artist_title(title)
-
-                song_name = parser.song_name
-                artist_name = parser.artist_name
-
-                try:
-                    search = network.search_for_track(artist_name,song_name)
-                    next_page = search.get_next_page()
-                    if(len(next_page) > 0):
-                        firstResult = next_page[0]
-                        return firstResult
-                    else:
-                        return None
-                except:
-                    return None
-        else:
-            return None
+        return self.default_network
 
 
     def get_now_playing(self,user):
@@ -242,6 +140,7 @@ class Lastfm:
         markdown = "```Markdown\nLast.fm overview of {}\n\n* Total Scrobbles: {} plays\n\n* Top Artists \n{}\n\n* Top Albums \n{}\n\n* Tags set by {} \n{}\n\n http://www.last.fm/user/{}```".format(user,total_play_count,artistText,albumsText,user,tagsByUserText,user)
         return markdown
 
+    
     def get_user_artist_info(self,user,artistName):
         user_artists = self.get_user_artists(user)
 
@@ -252,16 +151,18 @@ class Lastfm:
 
         return "Looks like **{}** hasn't discovered this band yet <:DD:260520559383805952>".format(user)
     
-    def get_user_albums(self,user,period="overall"):
+    def get_user_albums(self,user,period="overall",size=5):
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
 
         library = lastfm_user.get_library()
         libUser = library.get_user()
 
-        print("Fetching albums for {}".format(user))
+        limit = size * size
 
-        return libUser.get_top_albums(limit=500,period=period)
+        print("Fetching albums for {} - Limit: {}".format(user,limit))
+
+        return libUser.get_top_albums(limit=limit,period=period)
 
     def get_user_artists(self,user,period="overall"):
         network = self.get_default_user_network()
@@ -289,12 +190,6 @@ class Lastfm:
         libUser = library.get_user()
 
         return libUser.get_playcount()
-    
-    def make_album_image(self,user,period):
-        # Download images
-        # Make grid
-        # return file handle so the bot will upload back.
-        print("not implemented")
 
     # Not working
     def compare_users(self,user1,user2):
@@ -400,100 +295,3 @@ class Lastfm:
 
 
 
-# Youtube Title parsing
-# Should be in its own file
-
-import re
-
-
-class YoutubeTitleParser(object):
-    song_name = None
-    artist_name = None
-
-    def __init__(self, title=None):
-        self.song_name = ''
-        self.artist_name = ''
-        self.separators = separators = [
-                                    ' -- ',
-                                    '--',
-                                    ' - ',
-                                    ' – ',
-                                    ' — ',
-                                    ' _ ',
-                                    '-',
-                                    '–',
-                                    '—',
-                                    ':',
-                                    '|',
-                                    '///',
-                                    ' / ',
-                                    '_',
-                                    '/',
-                                    '@'
-        ]
-        if title:
-            self.split_artist_title(title)
-
-    def parse_song(self, title=None):
-        parts = title.split('-', 1)
-        if len(parts) > 1:
-            self.artist_name = parts[0]
-            self.song_name = parts[1]
-        else:
-            self.song_name = parts[0]
-            self.artist_name = ''
-
-    @staticmethod
-    def _clean_fluff(string):
-        result = re.sub(r'/\s*\[[^\]]+\]$/', '', string=string)  # [whatever] at the end
-        result = re.sub(r'/^\s*\[[^\]]+\]\s*/', '', string=result)  # [whatever] at the start
-        result = re.sub(r'/\s*\[\s*(M/?V)\s*\]/', '', string=result)  # [MV] or [M/V]
-        result = re.sub(r'/\s*\(\s*(M/?V)\s*\)/', '', string=result)  # (MV) or (M/V)
-        result = re.sub(r'/[\s\-–_]+(M/?V)\s*/', '', string=result)  # MV or M/V at the end
-        result = re.sub(r'/(M/?V)[\s\-–_]+/', '', string=result)  # MV or M/V at the start
-        result = re.sub(r'/\s*\([^\)]*\bver(\.|sion)?\s*\)$/i', '', string=result)  # (whatever version)
-        result = re.sub(r'/\s*[a-z]*\s*\bver(\.|sion)?$/i', '', string=result)  # ver. and 1 word before (no parens)
-        result = re.sub(r'/\s*(of+icial\s*)?(music\s*)?video/i', '', string=result)  # (official)? (music)? video
-        result = re.sub(r'/\s*(ALBUM TRACK\s*)?(album track\s*)/i', '', string=result)  # (ALBUM TRACK)
-        result = re.sub(r'/\s*\(\s*of+icial\s*\)/i', '', string=result)  # (official)
-        result = re.sub(r'/\s*\(\s*[0-9]{4}\s*\)/i', '', string=result)  # (1999)
-        result = re.sub(r'/\s+\(\s*(HD|HQ)\s*\)$/', '', string=result)  # HD (HQ)
-        result = re.sub(r'/[\s\-–_]+(HD|HQ)\s*$/', '', string=result)  # HD (HQ)
-
-        return result
-
-    @staticmethod
-    def _clean_title(title):
-        result = re.sub('/\s*\*+\s?\S+\s?\*+$/', '', title)
-        result = re.sub('/\s*video\s*clip/i', '', result)  # **NEW**
-        result = re.sub('/\s*video\s*clip/i', '', result)  # video clip
-        result = re.sub('/\s+\(?live\)?$/i', '', result)  # live
-        result = re.sub('/\(\s*\)/', '', result)  # Leftovers after e.g. (official video)
-        result = re.sub('/^(|.*\s)"(.*)"(\s.*|)$/', '$2', result)  # Artist - The new "Track title" featuring someone
-        result = re.sub('/^(|.*\s)\'(.*)\'(\s.*|)$/', '$2', result)  # 'Track title'
-        result = re.sub('/^[/\s,:;~\-–_\s"]+/', '', result)  # trim starting white chars and dash
-        result = re.sub('/[/\s,:;~\-–_\s"]+$/', '', result)  # trim trailing white chars and dash
-        return result
-
-    @staticmethod
-    def _clean_artist(artist):
-        result = re.sub('/\s*[0-1][0-9][0-1][0-9][0-3][0-9]\s*/', '', artist)  # date formats ex. 130624
-        result = re.sub('/^[/\s,:;~\-–_\s"]+/', '', result)  # trim starting white chars and dash
-        result = re.sub('/[/\s,:;~\-–_\s"]+$/', '', result)  # trim starting white chars and dash
-
-        return result
-
-    def split_artist_title(self, title):
-        parts = None
-        for separator in self.separators:
-            if separator in title:
-                parts = title.split('{}'.format(separator), 1)
-                break
-
-        if parts:
-            self.song_name = self._clean_title(parts[1])
-            self.song_name = self._clean_fluff(self.song_name)
-            self.artist_name = self._clean_artist(parts[0])
-        else:
-            self.song_name = title
-            self.artist_name = ''

@@ -30,6 +30,7 @@ from musicbot.permissions import Permissions, PermissionsDefaults
 from musicbot.utils import load_file, write_file, sane_round_int
 from musicbot.lastfm import Lastfm
 from musicbot.chartmaker import ChartMaker
+from musicbot.database import LastFmSQLiteDatabase
 
 from . import exceptions
 from . import downloader
@@ -409,8 +410,6 @@ class MusicBot(discord.Client):
             else:
                 self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_send_message(channel, newmsg)
             
-            # Apply Scrobble delay as Last.fm API suggests it.
-            asyncio.ensure_future(self.scrobble_after_some_time(player))
 
     async def on_player_resume(self, entry, **_):
         await self.update_now_playing(entry)
@@ -420,46 +419,6 @@ class MusicBot(discord.Client):
 
     async def on_player_stop(self, **_):
         await self.update_now_playing()
-
-    async def scrobble_after_some_time(self,player):
-        if player.current_entry:
-            duration = player.current_entry.duration
-            time_to_wait = duration / 2
-
-            members = player.voice_client.channel.voice_members
-
-            if self.config.lastfm_scrobbledelay != 0:
-                time_to_wait = self.config.lastfm_scrobbledelay
-            
-            for user in self.config.lastfm_users:
-                lastfm_user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(user)]
-
-                for member in members:
-                    user_id = member.id
-
-                    if user_id == lastfm_user_id:
-                        self.lastfm.update_now_playing(user,player.current_entry.title,time_to_wait)
-
-            # If the track is very long(>30 min), scrobble after 4 minutes
-            if duration >= 30 * 60:
-                time_to_wait = 240
-
-            
-            #print("Waiting {} seconds before scrobbling ".format(str(time_to_wait)))
-            await asyncio.sleep(time_to_wait)
-
-
-            # Actually scrobble
-            # THINK : if player is paused, this method will still be called regardless,what to do ? :thinking:
-            for user in self.config.lastfm_users:
-                # Check if this user is in channel
-                lastfm_user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(user)]
-
-                for member in members:
-                    user_id = member.id
-
-                    if user_id == lastfm_user_id:
-                        self.lastfm.scrobble(user)
 
     async def on_player_finished_playing(self, player, **_):
         if not player.playlist.entries and not player.current_entry and self.config.auto_playlist:
@@ -767,6 +726,130 @@ class MusicBot(discord.Client):
 
         print()
         # t-t-th-th-that's all folks!
+
+
+    async def chart_done_callback(self,file,channel,generatingMessageProc):
+        with open(file, 'rb') as f:
+            await self.send_file(channel, file)
+            await self.delete_message(generatingMessageProc)
+
+    async def chart_error_callback(self,error_message,channel,generatingMessageProc):
+        await self.delete_message(generatingMessageProc)
+        await self.safe_send_message(channel,error_message)
+        
+        
+
+    async def cmd_chart(self,message):
+        """
+        Usage:
+            {command_prefix}chart [username] [type] [size]
+
+        Returns Last.fm chart by using album info then creates an image.If you dont specify a user name, it will look for one in database.
+        Valid types: 7day 1month 3month 6month 12month overall
+        Valid sizes: 3x3 4x4 5x5
+
+        Default options are type: overall, size: 5x5.
+        """        
+
+        valid_types = ["7day","1month","3month","6month","12month","overall"]
+        valid_sizes = ["3x3","4x4","5x5"]
+
+        # Parsing!
+        split = message.content.split('!chart ')
+        #print(split)
+
+        first_element_is_username = False
+        first_element_is_type = False
+        first_element_is_size = False
+        
+        t = None
+        s = None
+        u = None
+
+        if len(split) != 1:
+            info = split[1].split(" ")
+            #print(info)
+
+            first_element = info[0]
+
+            for t in valid_types:
+                if t == first_element:
+                    first_element_is_type = True
+
+            for s in valid_sizes:
+                if s == first_element:
+                    first_element_is_size = True
+
+            if not first_element_is_size and not first_element_is_type:
+                first_element_is_username = True
+
+            #print("First Element is username: {} First Element is type: {} First Element is size: {}".format(first_element_is_username,first_element_is_type,first_element_is_size))
+            if first_element_is_username:
+                u = info[0]
+            
+            if first_element_is_size:
+                s = info[0]
+
+            if first_element_is_type:
+                t = info[0]
+
+            if len(info) == 2 and first_element_is_username:
+                t = info[1]
+            
+            if len(info) == 3 and first_element_is_username:
+                t = info[1]
+                s = info[2]
+
+            if len(info) == 2 and not first_element_is_username:
+                s = info[1]
+
+            #print("User Name: {} Type: {} Size: {}".format(u,t,s))
+
+            if s not in valid_sizes:
+                valid_sizes_str = ""
+                for s in valid_sizes:
+                    valid_sizes_str += s + " "
+                return Response("You inputted an invalid size <:DD:260520559383805952>. Here are the valid sizes: `{}`".format(valid_sizes_str))
+
+            if t not in valid_types:
+                valid_types_str = ""
+                for tt in valid_types:
+                    valid_types_str += tt + " "
+                
+                return Response("You inputted an invalid type <:DD:260520559383805952>. Here are the valid types: `{}`".format(valid_types_str))
+        
+
+        if t == None:
+            t = "overall"
+
+        if s == None:
+            s = 5
+
+        if u == None:
+            try:
+                u = self.lastfm.db.get_lastfm_user(message.author.id)
+            except:
+                return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)    
+
+        # At this point if user is None, something is wrong
+        if u == None:
+            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
+    
+        if s == "3x3":
+            s = 3
+
+        if s == "4x4":
+            s = 4
+
+        if s == "5x5":
+            s = 5
+        
+        generatingMessageProc = await self.safe_send_message(message.channel,
+                                        '<:watch:277842021119688705> Generating chart... Parameters: **{}** *{}* *{}* <:watch:277842021119688705>'.format(u,t,s))
+
+        cm = ChartMaker(self.chart_done_callback,message.channel,self.lastfm,u,s,t,generatingMessageProc,self.chart_error_callback)
+        await cm.start()
+    
     async def cmd_bandinfo(self,message,bandName=None):
         split = message.content.split('!bandinfo ')
         try:
@@ -777,7 +860,7 @@ class MusicBot(discord.Client):
         except:
             return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
 
-
+    # !!! This command needs handling of database users !!!
     async def cmd_band(self,message,bandName=None):
         split = message.content.split('!band ')
         try:
@@ -795,62 +878,6 @@ class MusicBot(discord.Client):
             print(e)
             return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
 
-    async def chart_done_callback(self,file,channel):
-        with open(file, 'rb') as f:
-            await self.send_file(channel, file)
-        
-        
-
-    async def cmd_chart(self,message,userName,t=None,size=None):
-        """
-        Usage:
-            {command_prefix}chart [username] [type] [size]
-
-        Returns Last.fm chart by using album info then constructs an image.
-        Valid types: 7day 1month 3month 6month 12month overall
-        Valid sizes: 3x3 4x4 5x5 10x10
-
-        Default options are type: overall, size: 5x5
-        """        
-        # Check if valid
-        valid_types = ["7day","1month","3month","6month","12month","overall"]
-        valid_sizes = ["3x3","4x4","5x5","10x10"]
-
-        if t == None:
-            t = "overall"
-
-        if size == None:
-            size = "5x5"
-
-
-        if size not in valid_sizes:
-            valid_sizes_str = ""
-            for s in valid_sizes:
-                valid_sizes_str += s + " "
-            return Response("You inputted an invalid size <:DD:260520559383805952>. Here are the valid sizes: `{}`".format(valid_sizes_str))
-    
-        if size == "3x3":
-            size = 3
-
-        if size == "4x4":
-            size = 4
-
-        if size == "5x5":
-            size = 5
-
-        if size == "10x10":
-            size = 10
-
-
-        if t not in valid_types:
-            valid_types_str = ""
-            for tt in valid_types:
-                valid_types_str += tt + " "
-            
-            return Response("You inputted an invalid type <:DD:260520559383805952>. Here are the valid types: `{}`".format(valid_types_str))
-        
-        cm = ChartMaker(self.chart_done_callback,message.channel,self.lastfm,userName,size,t)
-
     async def cmd_lastfm(self,message,username=None):
         """
         Usage:
@@ -858,13 +885,14 @@ class MusicBot(discord.Client):
 
         Returns Last.fm summary of the user.
         """
-        if username == None:
-                # Find username from author
-                user_id = message.author.id
 
-                if user_id in self.config.lastfm_user_ids:
-                    index = self.config.lastfm_user_ids.index(user_id)
-                    username = self.config.lastfm_users[index]
+        if username == "*":
+            markdown = self.lastfm.db.list_users()
+            return Response(markdown)
+
+        if username == None:
+            # If the user exists, it wil return the username
+            username = self.lastfm.db.get_lastfm_user(message.author.id)
 
         if username == None:
             return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
@@ -874,6 +902,25 @@ class MusicBot(discord.Client):
         except:
             return Response("There was a problem retrieving Last.fm summary.",reply=True,delete_after=30)
 
+
+    async def cmd_setlastfm(self,message,username):
+        """
+        Usage:
+            {command_prefix}setlastfm [username]
+
+        Saves your last.fm user name so you can omit it in the future.
+        """
+        try:
+            if self.lastfm.db.user_exists(message.author.id) == True:
+                self.lastfm.db.update(message.author.id,username)
+            else:
+                self.lastfm.db.insert(message.author.id,username)
+
+            return Response("Success! Next time you use any Last.fm command, you can omit your user name!",reply=True)
+        except Exception as error:
+            print(error)
+            return Response("There was a problem saving your Last.fm information!",reply=True)
+
     async def cmd_nowplaying(self,message,username=None):
         """
         Usage:
@@ -881,157 +928,15 @@ class MusicBot(discord.Client):
 
         Returns Last.fm 'currently scrobbling' song.
         """        
-        if username == None:
-                # Find username from author
-                user_id = message.author.id
-
-                if user_id in self.config.lastfm_user_ids:
-                    index = self.config.lastfm_user_ids.index(user_id)
-                    username = self.config.lastfm_users[index]
 
         if username == None:
-            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
+            # If the user exists, it wil return the username
+            username = self.lastfm.db.get_lastfm_user(message.author.id)
+
+        if username == None:
+            return Response("User could not be found. Try following up the command with your user name.Check out !setlastfm.",reply=True,delete_after=60)
         markdown = self.lastfm.get_now_playing(username)
         return Response(markdown)
-
-    async def cmd_addtags(self,player,message,tags,username=None):
-        """
-        Usage:
-            {command_prefix}addtags [tags] [username]
-
-        Adds tags to the currently playing song.Requires auth through PMing bot. See !help lastfmsupport
-        Song has to be found by title.
-        Tags can be seperated by comma.
-        TAGS SHOULDNT HAVE WHITESPACES !!!!
-        """
-
-        title = player.current_entry.title
-
-        if len(title) > 0:
-            if username == None:
-                # Find username from author
-                user_id = message.author.id
-
-                if user_id in self.config.lastfm_user_ids:
-                    index = self.config.lastfm_user_ids.index(user_id)
-                    username = self.config.lastfm_users[index]
-
-            if username == None:
-                return Response("User could not be found. This command requires authentication. See !help lastfmsupport",reply=True,delete_after=60)
-            try:
-                if self.lastfm.add_tags_from_video_title(username,title,tags):
-                    return Response(":thumbsup:",reply=True,delete_after=30)
-                else:
-                    return Response("There was a problem adding tags to the currently playing song",reply=True,delete_after=30)    
-            except:
-                return Response("There was a problem adding tags to the currently playing song",reply=True,delete_after=30)
-
-    async def cmd_tags(self,player,message,username=None):
-        """
-        Usage:
-            {command_prefix}tags [username]
-
-        Displays the tags of the currently playing song for the user. If the username isnt specified, it will look for the database. See !help lastfmsupport
-        Song has to be found by title.
-        """
-
-        if player.is_playing or player.is_paused:
-            title = player.current_entry.title
-
-            if len(title) > 0:
-                if username == None:
-                    # Find username from author
-                    user_id = message.author.id
-
-                    if user_id in self.config.lastfm_user_ids:
-                        index = self.config.lastfm_user_ids.index(user_id)
-                        username = self.config.lastfm_users[index]
-
-                if username == None:
-                    return Response("User could not be found. Try following up the command with your last.fm username",reply=True,delete_after=60)
-
-                tags = self.lastfm.get_user_tags_from_video_title(username,title)
-
-                if tags != None:
-                    markdown = " your tags for the currently playing song : "
-                    for tag in tags:
-                        markdown += "**{}**,".format(tag.name)
-                    return Response(markdown,reply=True,delete_after=60)
-                else:
-                    return Response("Song was not found on Last.fm",delete_after=30)
-
-    async def cmd_lastfmsupport(self,message,command,username,password=None):
-        """
-        Usage:
-            {command_prefix}lastfmsupport [action] [username] [password]
-
-        This command only works by PMing the bot.
-        Enables last.fm scrobbling through our voice channel.
-        To enable scrobbling,PM the bot like this: !lastfmsupport enable arkenthera mysickpassword
-        To disable scrobbling,PM the bot like this: !lastfmsupport disable arkenthera
-        """
-
-        if(message.channel.is_private):
-            md5password = pylast.md5(password)
-            password = md5password
-
-
-            if(command == 'enable'):
-                if(username in self.config.lastfm_users):
-                    user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(username)]
-
-                    if user_id == message.author.id:
-                        # First call this before saving because if the password is wrong,it will throw an error
-                        try:
-                            self.lastfm.InitializeUser(username,md5password)
-
-                            self.config.lastfm_passwords[self.config.lastfm_users.index(username)] = md5password
-                            self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
-
-                            return Response("Thanks! Your password has been replaced.")
-                        except:
-                            return Response("An error has occured.Your credentials could be incorrect or Last.fm API might be down.")    
-                    else:
-                        return Response("Did you think I wouldnt think about this? :LUL: ", reply=True)
-                else:
-                    if password == None:
-                        return Response("To enable,password is required.",reply=True)
-                    
-                    try:
-                        self.lastfm.InitializeUser(username,md5password)
-
-                        self.config.lastfm_users.append(username)
-                        self.config.lastfm_passwords.append(password)
-                        self.config.lastfm_user_ids.append(message.author.id)
-
-                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
-                        self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
-                        self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
-
-                        return Response("Thanks! You have enabled scrobbling support for your Last.fm account {}".format(username))
-                    except:
-                        return Response("An error has occured.Your credentials could be incorrect or Last.fm API might be down.")    
-
-            if(command == 'disable'):
-                if(username in self.config.lastfm_users):
-                    password = self.config.lastfm_passwords[self.config.lastfm_users.index(username)]
-                    user_id = self.config.lastfm_user_ids[self.config.lastfm_users.index(username)]
-
-                    if user_id == message.author.id:
-                        self.config.lastfm_passwords.remove(password)
-                        self.config.lastfm_users.remove(username)
-                        self.config.lastfm_user_ids.remove(message.author.id)
-
-                        self.config.set_value('Lastfm','Passwords',''.join(str(e) + " " for e in self.config.lastfm_passwords))
-                        self.config.set_value('Lastfm','Users',''.join(str(e) + " " for e in self.config.lastfm_users))
-                        self.config.set_value('Lastfm','Ids',''.join(str(e) + " " for e in self.config.lastfm_user_ids))
-
-                        return Response("Disabled Last.fm support for your account.", reply=True)
-                    else:
-                        return Response("Did you think I wouldnt think about this? :LUL: ", reply=True)
-
-        else:
-            return Response("This command meant to be used via PMing the bot.", reply=True, delete_after=60)
 
     async def cmd_help(self, command=None):
         """

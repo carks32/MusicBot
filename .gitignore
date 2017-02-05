@@ -12,3 +12,4 @@ config/permissions.ini
 musicbot/test.py
 
 lastfm_album_cache/*?.*
+databases/*?.*

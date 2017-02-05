@@ -48,26 +48,30 @@ def done_callback(future):
     print("Done.")
 
 class ChartMaker:
-    def __init__(self,donecallback,channel,lastfm,user,size,period):
+    def __init__(self,donecallback,channel,lastfm,user,size,period,generatingMessageProc,errorCallback):
         self.lastfm = lastfm
         self.size = size
         self.user = user
         self.period = period
         self.donecallback = donecallback
         self.channel = channel
+        self.generatingMessageProc = generatingMessageProc
+        self.errorCallback = errorCallback
 
         # Get albums
-        self.user_albums = self.lastfm.get_user_albums(self.user,self.period)
+        self.user_albums = self.lastfm.get_user_albums(self.user,self.period,self.size)
 
 
-        if len(self.user_albums) < size * size:
-            print("Warning: User {} has {} albums but you requested {}".format(user,len(self.user_albums,str(size*size))))
+    async def start(self):
+        if len(self.user_albums) < self.size * self.size:
+            error_string = "<:x:277841619464617984> Error! Error! *{}* has **{}** albums but you requested **{}**.<:x:277841619464617984>".format(self.user,len(self.user_albums),str(self.size*self.size))
+            await self.errorCallback(error_string,self.channel,self.generatingMessageProc)
             return
 
         self.selected_albums = list()
         self.selected_album_cover_urls = list()
 
-        for i in range(size*size):
+        for i in range(self.size*self.size):
             self.selected_albums.append(self.user_albums[i])
             self.selected_album_cover_urls.append(self.user_albums[i].item.get_cover_image())
 
@@ -78,7 +82,7 @@ class ChartMaker:
         download_tasks = (download(url, self.session, semaphore) for url in urls)
         tasks = asyncio.gather(*download_tasks)
         tasks.add_done_callback(self.downloads_complete)
-        print("Starting downloading images for {} - {} - {}".format(user,size * size,period))
+        print("Starting downloading images..")
         asyncio.ensure_future(asyncio.gather(*download_tasks))
     
     
@@ -114,10 +118,10 @@ class ChartMaker:
             if image_handle != '':
                 os.remove(os.path.join(IMAGE_DOWNLOAD_PATH,image_handle))
         
-        final_image_path = os.path.join(IMAGE_DOWNLOAD_PATH,"{}_{}.png".format(user,str(size_multiplier)))
-        new_im.save(final_image_path)
+        final_image_path = os.path.join(IMAGE_DOWNLOAD_PATH,"{}_{}.jpg".format(user,str(size_multiplier)))
+        new_im.save(final_image_path,"JPEG",quality=80, optimize=True)
         
-        await self.donecallback(final_image_path,self.channel)
+        await self.donecallback(final_image_path,self.channel,self.generatingMessageProc)
     
     
     def downloads_complete(self,future):
