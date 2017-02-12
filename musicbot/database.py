@@ -11,14 +11,39 @@ class LastFmSQLiteDatabase:
         self.sqlite = self.db_connection.cursor()
 
         self.create_table()
+    
+    # Returns weekly discussion user table excluding last winner and users marked as 'exclude'
+    def get_weekly_discussion_users(self):
+        query = "SELECT * FROM weekly_discussion"
+
+        self.sqlite.execute(query)
+
+        results = self.sqlite.fetchall()
+
+        users = list()
+        for result in results:
+            discord_uid = result[0]
+            last_winner = result[1]
+            exclude = result[2]
+
+            if exclude == 0:
+                users.append(dict({ "discord_uid": discord_uid, 'last_winner': last_winner, 'exclude': exclude }))
+
+        return users
 
     # If the table not exists, create
     def create_table(self):
         try:
             self.sqlite.execute('CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY,lastfm_uname TEXT)'.format(tn="lastfm",nf="discord_uid",ft="INTEGER"))
-        except:
-            print("Last.fm table already exists!")
-
+        except Exception as error:
+            print("Last.fm table creation error!")
+            print(error)
+        
+        try:
+            self.sqlite.execute('CREATE TABLE weekly_discussion (discord_uid INTEGER PRIMARY KEY,last_winner INTEGER,exclude INTEGER)')
+        except Exception as error:
+            print("Weekly discussion table creation error!")
+            print(error)
 
     def insert(self,discord_uid,lastfm_username):
         # Try casting discord_uid to int,otherwise fail
@@ -106,11 +131,17 @@ class LastFmSQLiteDatabase:
 
         markdown = '```Markdown\n{} Last.fm users on our database: \n'.format(len(results))
         for result in results:
-            markdown += result[1] + "\n"
+            markdown += result[1] + " - " + str(result[0]) + "\n"
         
         markdown += '```'
         
         return markdown
+
+    def get_lastfm_users(self):
+        query = "SELECT * FROM lastfm"
+        self.sqlite.execute(query)
+        results = self.sqlite.fetchall()
+        return results
 
         
 

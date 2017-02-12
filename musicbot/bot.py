@@ -9,6 +9,7 @@ import discord
 import asyncio
 import pylast
 import traceback
+import random
 
 from discord import utils
 from discord.object import Object
@@ -933,10 +934,102 @@ class MusicBot(discord.Client):
             # If the user exists, it wil return the username
             username = self.lastfm.db.get_lastfm_user(message.author.id)
 
+        if username == "*":
+            # Get all lastfm users
+            lastfm_users = list()
+            try:
+                lastfm_users = self.lastfm.db.get_lastfm_users()
+            except:
+                return Response("There was a problem retrieving all registered users!")
+            
+            response_text = "```Markdown\nListing now playing states of {} users. \n".format(len(lastfm_users))
+            for luser in lastfm_users:
+                discord_uid = luser[0]
+                lastfm_username = luser[1]
+
+                discord_member = message.channel.server.get_member(str(discord_uid))
+
+                if discord_member != None:
+                    discord_member_text = str(discord_member)
+                    discord_member_displayname = "{} ({})".format(discord_member.display_name,discord_member_text)
+                else:
+                    discord_member_displayname = lastfm_username
+                np = self.lastfm.get_now_playing(lastfm_username)
+                if np != None:
+                    np_text = "Current listening to {} by {}".format(np.title,np.artist.name)
+                else:
+                    np_text = "Nothing"
+                response_text += "> {}\n{}\n\n".format(discord_member_displayname,np_text)
+
+            response_text += "```"
+            
+            return Response(response_text)
+
         if username == None:
             return Response("User could not be found. Try following up the command with your user name.Check out !setlastfm.",reply=True,delete_after=60)
-        markdown = self.lastfm.get_now_playing(username)
+        markdown = self.lastfm.get_now_playing_markdown(username)
         return Response(markdown)
+
+    async def cmd_weeklyroll(self,message):
+        if message.author.id != self.config.owner_id:
+            return Response("You can't do that.")
+        
+        weekly_users = self.lastfm.db.get_weekly_discussion_users()
+        weekly_user_count = len(weekly_users)
+        rnd = random.randint(0,weekly_user_count)
+
+        print("{}th user is selected!".format(rnd))
+
+        selected_user_id = str(weekly_users[rnd]["discord_uid"])
+        
+        selected_member = await self.get_user_info(selected_user_id)
+        
+        if selected_member == None:
+            return Response("There was a problem!Randomly selected user is not found. Please try again.")
+        
+        try:
+            display_name = selected_member.display_name
+            mention_str = selected_member.mention
+            avatar = selected_member.avatar_url
+            return Response("I have randomly selected a user! Congrats to {}! Please share your album for this weeks discussion! {}".format(mention_str,avatar))
+        except:
+            return Response("There was a problem picking a random user. Please try again.")
+
+    async def cmd_weeklyrolllist(self,message):
+        try:
+            weekly_users = self.lastfm.db.get_weekly_discussion_users()
+            nonexcluded = list()
+            last_winner = None
+            for weekly_user in weekly_users:
+                if weekly_user["last_winner"] == 1:
+                    last_winner = weekly_user
+                else:
+                    nonexcluded.append(weekly_user)
+            
+            if last_winner != None:
+                last_winner_user = await self.get_user_info(last_winner["discord_uid"])
+                last_winner_displayname = last_winner_user.display_name
+            else:
+                last_winner_displayname = "None"
+
+            markdown = "```Markdown\n{} users in the weekly roll list.Last winner was {} and is excluded! \n\n".format(len(weekly_users),last_winner_displayname)
+            for user in nonexcluded:
+                discord_uid = str(user["discord_uid"])
+                member = message.channel.server.get_member(discord_uid)
+                if member == None:
+                    member = await self.get_user_info(discord_uid)
+                display_name = member.display_name
+
+                markdown += "{} - {} \n".format(member,display_name)
+            markdown += "```"
+            return Response(markdown)
+        except Exception as error:
+            print(error)
+            return Response("There was a problem retrieving weekly roll list.Please try again.")
+        
+
+
+        
 
     async def cmd_help(self, command=None):
         """

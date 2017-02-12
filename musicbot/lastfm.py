@@ -35,7 +35,7 @@ class Lastfm:
         return self.default_network
 
 
-    def get_now_playing(self,user):
+    def get_now_playing_markdown(self,user):
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
 
@@ -50,6 +50,18 @@ class Lastfm:
             markdown = "**{}** is currently not listening to anything.".format(user)
 
         return markdown
+
+    def get_now_playing(self,user):
+        network = self.get_default_user_network()
+        lastfm_user = network.get_user(user)
+
+        library = lastfm_user.get_library()
+        libUser = library.get_user()
+        try:
+            np = libUser.get_now_playing()
+            return np
+        except:
+            return None
 
     def get_user_summary(self,user):
         network = self.get_default_user_network()
