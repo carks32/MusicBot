@@ -121,6 +121,34 @@ class LastFmSQLiteDatabase:
         self.sqlite.execute(query)
             
         self.db_connection.commit()
+
+    def update_weekly_dc(self,discord_uid):
+        try:
+            discord_uid = int(discord_uid)
+        except:
+            print("Probably invalid user id")
+            return
+
+        # Find last winner
+        query = "SELECT * FROM 'weekly_discussion' WHERE last_winner=(1)"
+        self.sqlite.execute(query)
+
+        results = self.sqlite.fetchall()
+
+        # if len(results) > 1:
+        #     print("Something is wrong: Len results {}".format(len(results)))
+        #     return
+        
+        query = "UPDATE 'weekly_discussion' SET last_winner=({}) WHERE discord_uid=({})".format(1,discord_uid)
+        self.sqlite.execute(query)
+        self.db_connection.commit()
+
+        if len(results) == 1:
+            last_winner_discord_uid = int(results[0][0])
+            print(last_winner_discord_uid)
+            query = "UPDATE 'weekly_discussion' SET last_winner=({}) WHERE discord_uid=({})".format(0,last_winner_discord_uid)
+            self.sqlite.execute(query)
+            self.db_connection.commit()
         
     def list_users(self):
         query = "SELECT * FROM lastfm"

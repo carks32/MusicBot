@@ -1,5 +1,7 @@
 import pylast
 from .database import LastFmSQLiteDatabase
+import datetime
+import math
 
 class Lastfm:
     def __init__(self,config):
@@ -43,9 +45,61 @@ class Lastfm:
 
             markdown = ":musical_note: **{}** is listening to *{}* by **{}**.".format(user,np.title,str(artist.name))
         except:
-            markdown = "**{}** is not listening to any music.".format(user)
+            markdown = "**{}** is not listening to any music. <:FeelsMetalHead:279991636144947200>".format(user)
 
         return markdown
+
+    def get_recent_tracks(self,user):
+        network = self.get_default_user_network()
+        lastfm_user = network.get_user(user)
+
+        recent_tracks = lastfm_user.get_recent_tracks(limit=10)
+
+        markdown = "```Markdown\nRecent tracks of {}\n".format(user)
+
+        for track in recent_tracks:
+            timestamp = track.timestamp
+            date_ago = timestamp
+
+            date = (datetime.datetime.utcnow() - datetime.datetime.utcfromtimestamp(float(timestamp)))
+            seconds_ago = date.total_seconds()
+
+            if seconds_ago > 60 and seconds_ago < 60*60:
+                date_ago = "{0:.0f} minutes ago".format(seconds_ago / 60)
+
+            if seconds_ago >= 60*60 and seconds_ago < 60*60*24:
+                hours_ago = seconds_ago / (60*60)
+
+                if hours_ago > 1 and hours_ago < 2:
+                    date_ago = "an hour ago"
+                else:
+                    date_ago = "{0:.0f} hours ago".format(math.floor(hours_ago))
+
+            if seconds_ago >= 60*60*24:
+                days_ago = seconds_ago / (60*60*24)
+
+                date_ago = "{0:.0f} days ago".format(days_ago)
+            
+            markdown += "{} - {} - {}\n".format(track.track.get_artist().name,track.track.title,date_ago)
+            
+
+        markdown += "```"
+        return markdown
+
+    def get_weekly_scrobble_count(self,user):
+        network = self.get_default_user_network()
+        lastfm_user = network.get_user(user)
+
+        library = lastfm_user.get_library()
+        libUser = library.get_user()
+
+        chart = libUser.get_weekly_track_charts()
+
+        total = 0
+        for c in chart:
+            w = c.weight
+            total += w
+        return total
 
     def get_now_playing(self,user):
         network = self.get_default_user_network()

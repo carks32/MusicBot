@@ -903,6 +903,74 @@ class MusicBot(discord.Client):
         except:
             return Response("There was a problem retrieving Last.fm summary.",reply=True,delete_after=30)
 
+    async def cmd_leaderboards(self,message):
+        """
+        Usage:
+            {command_prefix}leaderboards
+
+        Returns top 10 scrobblers of users registered using !setlastfm.
+        """        
+        lastfm_users = list()
+        try:
+            lastfm_users = self.lastfm.db.get_lastfm_users()
+        except:
+            return Response("There was a problem retrieving all registered users!")
+
+        generatingMessageProc = await self.safe_send_message(message.channel,
+                                        '<:watch:277842021119688705> Preparing leaderboards... *PS: It takes long*<:watch:277842021119688705>')
+        
+        markdown = "```Scrobble Leaderboard for this week\n\n"
+        scrobble_counts = list()
+        max_counter = 0
+        for luser in lastfm_users:
+            discord_uid = luser[0]
+            lastfm_username = luser[1]
+
+            if max_counter > 10:
+                break
+
+            scrobble_count = self.lastfm.get_weekly_scrobble_count(lastfm_username)
+            scrobble_counts.append({ 'discord_uid':discord_uid, 'lastfm_username':lastfm_username,'scrobble_count': scrobble_count })
+            max_counter = max_counter + 1
+
+        sorted_scrobbles = sorted(scrobble_counts, key=lambda k: k['scrobble_count'],reverse=True)
+        
+        for luser in sorted_scrobbles:
+            discord_uid = luser['discord_uid']
+            lastfm_username = luser['lastfm_username']
+            discord_member_displayname = lastfm_username
+
+            scrobble_count = luser['scrobble_count']
+
+            if scrobble_count != 0:
+                markdown += "{} ({}) - {} scrobbles.\n".format(discord_member_displayname,lastfm_username, scrobble_count)
+
+        markdown += "```"
+
+        await self.delete_message(generatingMessageProc)
+
+        return Response(markdown)
+
+    async def cmd_recent(self,message,username=None):
+        """
+        Usage:
+            {command_prefix}recent [username]
+
+        Returns Last.fm recent tracks of user.
+        """
+
+        if username == None:
+            # If the user exists, it wil return the username
+            username = self.lastfm.db.get_lastfm_user(message.author.id)
+
+        if username == None:
+            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
+        try:
+            markdown = self.lastfm.get_recent_tracks(username)
+            return Response(markdown)
+        except Exception as error:
+            print(error)
+            return Response("There was a problem retrieving Last.fm recent tracks.",reply=True,delete_after=30)
 
     async def cmd_setlastfm(self,message,username):
         """
@@ -978,7 +1046,7 @@ class MusicBot(discord.Client):
         
         weekly_users = self.lastfm.db.get_weekly_discussion_users()
         weekly_user_count = len(weekly_users)
-        rnd = random.randint(0,weekly_user_count)
+        rnd = random.randint(0,weekly_user_count-1)
 
         print("{}th user is selected!".format(rnd))
 
@@ -993,6 +1061,12 @@ class MusicBot(discord.Client):
             display_name = selected_member.display_name
             mention_str = selected_member.mention
             avatar = selected_member.avatar_url
+            try:
+                self.lastfm.db.update_weekly_dc(selected_user_id)
+            except Exception as error:
+                print("Could not update last winner!")
+                print(error)
+            
             return Response("I have randomly selected a user! Congrats to {}! Please share your album for this weeks discussion! {}".format(mention_str,avatar))
         except:
             return Response("There was a problem picking a random user. Please try again.")
