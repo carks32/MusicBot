@@ -29,7 +29,7 @@ from musicbot.player import MusicPlayer
 from musicbot.config import Config, ConfigDefaults
 from musicbot.permissions import Permissions, PermissionsDefaults
 from musicbot.utils import load_file, write_file, sane_round_int
-from musicbot.lastfm import Lastfm
+from musicbot.lastfm import Lastfm, UserTrack
 from musicbot.chartmaker import ChartMaker
 from musicbot.database import LastFmSQLiteDatabase
 
@@ -928,45 +928,47 @@ class MusicBot(discord.Client):
             {command_prefix}nowplaying [username]
 
         Returns Last.fm 'currently scrobbling' song.
-        """        
+        """
 
         if username == None:
             # If the user exists, it wil return the username
             username = self.lastfm.db.get_lastfm_user(message.author.id)
 
+        if username == None:
+            return Response("User could not be found. Try following up the command with your user name. Check out `!setlastfm`.",reply=True,delete_after=60)
+
         if username == "*":
-            # Get all lastfm users
-            lastfm_users = list()
+            # Get all Last.fm users
             try:
                 lastfm_users = self.lastfm.db.get_lastfm_users()
             except:
                 return Response("There was a problem retrieving all registered users!")
-            
-            response_text = "```Markdown\nListing now playing states of {} users. \n".format(len(lastfm_users))
-            for luser in lastfm_users:
-                discord_uid = luser[0]
-                lastfm_username = luser[1]
 
-                discord_member = message.channel.server.get_member(str(discord_uid))
+            listeners = list()
 
-                if discord_member != None:
-                    discord_member_text = str(discord_member)
-                    discord_member_displayname = "{} ({})".format(discord_member.display_name,discord_member_text)
-                else:
-                    discord_member_displayname = lastfm_username
-                np = self.lastfm.get_now_playing(lastfm_username)
-                if np != None:
-                    np_text = "Current listening to {} by {}".format(np.title,np.artist.name)
-                else:
-                    np_text = "Nothing"
-                response_text += "> {}\n{}\n\n".format(discord_member_displayname,np_text)
+            for user in lastfm_users:
+                lastfm_username = user[1]
+                track = self.lastfm.get_now_playing(lastfm_username)
 
-            response_text += "```"
-            
+                if track != None:
+                    discord_id = user[0]
+                    discord_member = message.channel.server.get_member(str(discord_id))
+
+                    listeners.append(UserTrack(discord_member.display_name, track.artist.name, track.title))
+
+            if len(listeners) == 0:
+                return Response("No one is listening to any music.")
+
+            if len(listeners) == 1:
+                response_text = "1 member is playing music:\n"
+            else:
+                response_text = "{} members are playing music:\n".format(len(listeners))
+
+            for user_track in listeners:
+                response_text += ":musical_note: {}.\n".format(self.lastfm.get_user_listening_text(user_track))
+
             return Response(response_text)
 
-        if username == None:
-            return Response("User could not be found. Try following up the command with your user name.Check out !setlastfm.",reply=True,delete_after=60)
         markdown = self.lastfm.get_now_playing_markdown(username)
         return Response(markdown)
 

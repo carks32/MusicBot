@@ -1,7 +1,5 @@
 import pylast
-import time
 from .database import LastFmSQLiteDatabase
-
 
 class Lastfm:
     def __init__(self,config):
@@ -23,8 +21,6 @@ class Lastfm:
             print(exception)
             print("[Warning] Last.fm credentials are incorrect for some users.")
 
-
-    
     def InitializeUser(self,user,password):
         network = pylast.LastFMNetwork(api_key = self.api_key, api_secret =
             self.api_secret, username = user, password_hash = password)
@@ -45,9 +41,9 @@ class Lastfm:
             np = libUser.get_now_playing()
             artist = np.artist
 
-            markdown = "**{}** is currently listening to *{}* by **{}**".format(user,np.title,str(artist.name))
+            markdown = ":musical_note: **{}** is listening to *{}* by **{}**.".format(user,np.title,str(artist.name))
         except:
-            markdown = "**{}** is currently not listening to anything.".format(user)
+            markdown = "**{}** is not listening to any music.".format(user)
 
         return markdown
 
@@ -152,7 +148,6 @@ class Lastfm:
         markdown = "```Markdown\nLast.fm overview of {}\n\n* Total Scrobbles: {} plays\n\n* Top Artists \n{}\n\n* Top Albums \n{}\n\n* Tags set by {} \n{}\n\n http://www.last.fm/user/{}```".format(user,total_play_count,artistText,albumsText,user,tagsByUserText,user)
         return markdown
 
-    
     def get_user_artist_info(self,user,artistName):
         user_artists = self.get_user_artists(user)
 
@@ -162,7 +157,7 @@ class Lastfm:
                 return markdown
 
         return "Looks like **{}** hasn't discovered this band yet <:DD:260520559383805952>".format(user)
-    
+
     def get_user_albums(self,user,period="overall",size=5):
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
@@ -270,11 +265,6 @@ class Lastfm:
         #     result = 100
         # print(result)
         # print("Common artist len {}".format(len(common_artists)))
-        
-
-        
-
-
 
     def get_artist_info(self,artistName):
 
@@ -299,11 +289,15 @@ class Lastfm:
         except Exception as e:
             return e
 
+    def get_user_listening_text(self, user_track):
+        return "**{}** is listening to *{}* by **{}**".format(
+            user_track.username,
+            user_track.track_artist_name,
+            user_track.track_title)
 
-
-        
-
-
-
-
-
+# TODO: Add classes to separate concerns
+class UserTrack:
+    def __init__(self, username, track_title, track_artist_name):
+        self.username = username
+        self.track_title = track_title
+        self.track_artist_name = track_artist_name
