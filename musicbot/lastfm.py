@@ -53,7 +53,7 @@ class Lastfm:
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
 		
-		if(!isinstance(index, int)):
+		if(not(isinstance(index, int))):
 			index = 0
 		if(index > 9):
 			index = 9
