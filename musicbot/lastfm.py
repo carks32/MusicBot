@@ -49,13 +49,18 @@ class Lastfm:
 
         return markdown
 
-    def get_recent_tracks(self,user):
+    def get_recent_tracks(self,user, index = 0):
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
+		
+		if(not(isinstance(index, int))):
+			index = 0
+		if(index > 9):
+			index = 9
+			
+        recent_tracks = lastfm_user.get_recent_tracks(limit=10*(index+1))[-10:]
 
-        recent_tracks = lastfm_user.get_recent_tracks(limit=10)
-
-        markdown = "```Markdown\nRecent tracks of {}\n".format(user)
+        markdown = "```Markdown\nRecent tracks of {} from {} to {}:\n".format(user, 10*index+1, 10*index+10)
 
         for track in recent_tracks:
             timestamp = track.timestamp
