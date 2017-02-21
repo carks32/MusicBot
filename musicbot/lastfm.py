@@ -58,7 +58,7 @@ class Lastfm:
 		if(index > 9):
 			index = 9
 			
-        recent_tracks = lastfm_user.get_recent_tracks(limit=10*index)[-10:]
+        recent_tracks = lastfm_user.get_recent_tracks(limit=10*(index+1))[-10:]
 
         markdown = "```Markdown\nRecent tracks of {} from {} to {}:\n".format(user, 10*index+1, 10*index+10)
 
