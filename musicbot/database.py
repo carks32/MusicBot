@@ -25,9 +25,7 @@ class LastFmSQLiteDatabase:
             discord_uid = result[0]
             last_winner = result[1]
             exclude = result[2]
-
-            if exclude == 0:
-                users.append(dict({ "discord_uid": discord_uid, 'last_winner': last_winner, 'exclude': exclude }))
+            users.append(dict({ "discord_uid": discord_uid, 'last_winner': last_winner, 'exclude': exclude }))
 
         return users
 

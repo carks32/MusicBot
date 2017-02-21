@@ -53,10 +53,10 @@ class Lastfm:
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
 		
-		if(not(isinstance(index, int))):
-			index = 0
-		if(index > 9):
-			index = 9
+        if(not(isinstance(index, int))):
+            index = 0
+        if(index > 49):
+            index = 49
 			
         recent_tracks = lastfm_user.get_recent_tracks(limit=10*(index+1))[-10:]
 

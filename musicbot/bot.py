@@ -951,13 +951,44 @@ class MusicBot(discord.Client):
 
         return Response(markdown)
 
-    async def cmd_recent(self,message,username=None):
+    async def cmd_recent(self,message):
         """
         Usage:
             {command_prefix}recent [username]
 
         Returns Last.fm recent tracks of user.
         """
+
+        split = message.content.split('!recent ')
+
+        index = 0
+        username = None
+
+        if len(split) != 1:
+            info = split[1].split(" ")
+
+            # !recent N or !recent username
+            if len(info) == 1:
+                try:
+                    tryIndex = int(info[0])
+                    index = tryIndex
+                except:
+                    username = info[0]
+
+            # 0 is username, 1 is index
+            if len(info) == 2:
+                username = info[0]
+                try:
+                    tryIndex = int(info[1])
+                    index = tryIndex
+                except:
+                    return Response("There was a problem with this command.",delete_after=30)
+
+
+        else:
+            print("Split len not equal 1")
+            username = None
+            index = 0
 
         if username == None:
             # If the user exists, it wil return the username
@@ -966,7 +997,7 @@ class MusicBot(discord.Client):
         if username == None:
             return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
         try:
-            markdown = self.lastfm.get_recent_tracks(username)
+            markdown = self.lastfm.get_recent_tracks(username,index)
             return Response(markdown)
         except Exception as error:
             print(error)
@@ -997,6 +1028,11 @@ class MusicBot(discord.Client):
 
         Returns Last.fm 'currently scrobbling' song.
         """
+
+
+        # if user_mentions != None:
+        #     usr = user_mentions[0]
+        #     username = self.lastfm.db.get_lastfm_user(message.author.id)
 
         if username == None:
             # If the user exists, it wil return the username
@@ -1080,7 +1116,8 @@ class MusicBot(discord.Client):
                 if weekly_user["last_winner"] == 1:
                     last_winner = weekly_user
                 else:
-                    nonexcluded.append(weekly_user)
+                    if weekly_user["exclude"] != 1:
+                        nonexcluded.append(weekly_user)
             
             if last_winner != None:
                 last_winner_user = await self.get_user_info(last_winner["discord_uid"])
