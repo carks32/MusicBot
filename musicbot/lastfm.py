@@ -1,5 +1,5 @@
 import pylast
-from .database import LastFmSQLiteDatabase
+from musicbot.database import LastFmSQLiteDatabase
 import datetime
 import math
 
@@ -230,14 +230,14 @@ class Lastfm:
 
         return libUser.get_top_albums(limit=limit,period=period)
 
-    def get_user_artists(self,user,period="overall"):
+    def get_user_artists(self,user,period="overall",limit=500):
         network = self.get_default_user_network()
         lastfm_user = network.get_user(user)
 
         library = lastfm_user.get_library()
         libUser = library.get_user()
 
-        return libUser.get_top_artists(limit=500,period=period)
+        return libUser.get_top_artists(limit=limit,period=period)
 
     def get_user_tags(self,user):
         network = self.get_default_user_network()
@@ -258,72 +258,56 @@ class Lastfm:
         return libUser.get_playcount()
 
     # Not working
-    def compare_users(self,user1,user2):
-
-        artistsA = self.get_user_artists(user1)
-        artistsB = self.get_user_artists(user2)
+    def taste(self,user1,user2):
+        artistsA = self.get_user_artists(user1,1000)
+        artistsB = self.get_user_artists(user2,1000)
 
         totalPlayCountA = self.get_user_totalplaycount(user1)
         totalPlayCountB = self.get_user_totalplaycount(user2)
 
-        artistALen = len(artistsA)
-        artistBLen = len(artistsB)
+        # print("Play count for {} is {}".format(user1,totalPlayCountA))
+        # print("Play count for {} is {}".format(user2,totalPlayCountB))
 
-        print(totalPlayCountA)
-        print(totalPlayCountB)
+        text = ""
 
-        print(artistALen)
-        print(artistBLen)
+        result = { 'playCountUser1': totalPlayCountA, 'playCountUser2': totalPlayCountB, 'common_artists': list() }
 
-        common_playcount = 0
-
-        for a in artistsA:
-            nameA = a.item.name
-            for b in artistsB:
-                nameB = b.item.name
-
-                if nameA == nameB:
-                    common_playcount = common_playcount + 1
-
-        print(common_playcount)
-        # common_artists = dict()
-        # for a in artistsA:
-        #     nameA = a.item.name
-        #     for b in artistsB:
-        #         nameB = b.item.name
-                
-        #         if nameA == nameB:
-        #             percentage = 0
-
-        #             weightA = float(a.weight)
-        #             weightB = float(b.weight)
-        #             # if weightA > weightB:
-        #             #     percentage = weightB / weightA
-        #             # else:
-        #             #     percentage = weightA / weightB
-
-        #             weightA = (weightA / (common_playcount)) * 100
-        #             weightB = (weightB / (common_playcount)) * 100
-
-        #             percentage = (weightA + weightB) / 2
-
-        #             print("Percentage for {} is {}".format(nameA,percentage))
-
-        #             common_artists[b.item.name] = { 'weightA': weightA, 'weightB': weightB, 'percentage': percentage }
+        if totalPlayCountA == 0 or totalPlayCountB == 0:
+            return result
         
-    
-        # percentageTotal = 0
-        # for key,item in common_artists.items():
-        #     percentageTotal = percentageTotal + float(item['percentage'])
 
-            
+        common_artists = list()
 
-        # result = percentageTotal / len(common_artists)
+        indexA = 0
 
-        # if result >= 100:
-        #     result = 100
-        # print(result)
-        # print("Common artist len {}".format(len(common_artists)))
+        for artistA in artistsA:
+            artistNameA = artistA.item.name
+
+            indexB = 0
+            for artistB in artistsB:
+                artistNameB = artistB.item.name
+
+                if artistNameA == artistNameB:
+                    common_artists.append({ 'artist': artistA, 'orderA': indexA, 'orderB': indexB })
+                indexB = indexB + 1
+            indexA = indexA + 1
+        
+
+        sorted_artists = list()
+        for common_artist in common_artists:
+            orderSum = common_artist['orderA'] + common_artist['orderB']
+            sorted_artists.append( {'artist': common_artist['artist'], 'orderSum': orderSum} )
+
+        #print(sorted_artists)
+
+
+        sorted_artists = sorted(sorted_artists, key=lambda k: k['orderSum'])
+
+        result['common_artists'] = sorted_artists
+        return result
+
+
+        
 
     def get_artist_info(self,artistName):
 

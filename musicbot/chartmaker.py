@@ -73,7 +73,12 @@ class ChartMaker:
 
         for i in range(self.size*self.size):
             self.selected_albums.append(self.user_albums[i])
-            self.selected_album_cover_urls.append(self.user_albums[i].item.get_cover_image())
+            try:
+                self.selected_album_cover_urls.append(self.user_albums[i].item.get_cover_image())
+            except:
+                self.selected_album_cover_urls.append("http://i.imgur.com/Gvmwrg8.png")
+                print("Error retrieving album image")
+                print(self.user_albums[i])
 
 
         urls = self.selected_album_cover_urls

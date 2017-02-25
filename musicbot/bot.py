@@ -42,6 +42,22 @@ from .constants import DISCORD_MSG_CHAR_LIMIT, AUDIO_CACHE_PATH
 
 load_opus_lib()
 
+def parse_mb_command(command,message):
+    split = message.split('!{} '.format(command))
+
+    params_len = len(split)
+
+    main_param = []
+    if params_len == 2:
+        main_param = split[1]
+        main_param = main_param.split(' ')
+
+    if len(main_param) == 0:
+        return None
+
+    if len(main_param) == 1 and main_param[0] == '':
+        return None
+    return main_param
 
 class SkipState:
     def __init__(self):
@@ -1002,6 +1018,87 @@ class MusicBot(discord.Client):
         except Exception as error:
             print(error)
             return Response("There was a problem retrieving Last.fm recent tracks.",reply=True,delete_after=30)
+    
+
+    async def cmd_taste(self,message):
+        """
+        Usage:
+            {command_prefix}taste [lastfmuser1] [lastfmuser2]
+
+        Compares two users. User1 is omitable if you linked your Last.fm account using !setlastfm.
+        """
+
+        users = parse_mb_command('taste',message.content)
+
+        if users != None:
+            user1 = ""
+            user2 = ""
+            # A registered user is comparing himself with another user
+            if len(users) == 1:
+                user1 = self.lastfm.db.get_lastfm_user(message.author.id)
+                user2 = users[0]
+
+            if len(users) == 2:
+                user1 = users[0]
+                user2 = users[1]
+            
+            try:
+                taste_result = self.lastfm.taste(user1,user2)
+                text = ""
+
+                if taste_result['playCountUser1'] == 0 and taste_result['playCountUser2'] == 0:
+                    text = "**{}** and **{}** haven't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user1,user2)
+
+                if taste_result['playCountUser1'] == 0:
+                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user1)
+
+                if taste_result['playCountUser2'] == 0:
+                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user2)
+
+                common_artist_len = len(taste_result['common_artists'])
+
+                if common_artist_len == 0:
+                    text = "**{}** and **{}** don't listen to same music.".format(user1,user2)
+                
+                if common_artist_len == 3:
+                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
+                    artistName3 = taste_result['common_artists'][2]['artist'].item.name
+
+                    text = "**{}** and **{}** both listen to **{}**, **{}** and **{}**.".format(user1,user2,artistName1,artistName2,artistName3)
+
+                if common_artist_len == 2:
+                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
+
+                    text = "**{}** and **{}** both listen to **{}** and **{}**.".format(user1,user2,artistName1,artistName2)
+
+                if common_artist_len == 1:
+                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                    text = "**{}** and **{}** both listen to **{}**.".format(user1,user2,artistName1)
+
+                if common_artist_len > 3:
+                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
+                    artistName3 = taste_result['common_artists'][2]['artist'].item.name
+
+                    text = "**{}** and **{}** both listen to **{}**, **{}**, **{}** and {} other".format(user1,user2,artistName1,artistName2,artistName3,(common_artist_len - 3))
+
+                    if common_artist_len - 3 == 1:
+                        text += " artist."
+                    else:
+                        text += " artists."
+
+                return Response(text)
+            except Exception as error:
+                print(error)
+                return Response("There was a problem with the command.",delete_after=30)    
+        else:
+            return Response("There was a problem with the command.",delete_after=30)
+
+
+
+
 
     async def cmd_setlastfm(self,message,username):
         """
@@ -1081,12 +1178,19 @@ class MusicBot(discord.Client):
             return Response("You can't do that.")
         
         weekly_users = self.lastfm.db.get_weekly_discussion_users()
-        weekly_user_count = len(weekly_users)
+        
+        nonexcluded = list()
+        for weekly_user in weekly_users:
+            if weekly_user["exclude"] != 1:
+                if weekly_user["last_winner"] != 1:
+                    nonexcluded.append(weekly_user)
+        
+        weekly_user_count = len(nonexcluded)
         rnd = random.randint(0,weekly_user_count-1)
 
         print("{}th user is selected!".format(rnd))
 
-        selected_user_id = str(weekly_users[rnd]["discord_uid"])
+        selected_user_id = str(nonexcluded[rnd]["discord_uid"])
         
         selected_member = await self.get_user_info(selected_user_id)
         
@@ -1125,7 +1229,7 @@ class MusicBot(discord.Client):
             else:
                 last_winner_displayname = "None"
 
-            markdown = "```Markdown\n{} users in the weekly roll list.Last winner was {} and is excluded! \n\n".format(len(weekly_users),last_winner_displayname)
+            markdown = "```Markdown\n{} users in the weekly roll list.Last winner was {} and is excluded! \n\n".format(len(nonexcluded),last_winner_displayname)
             for user in nonexcluded:
                 discord_uid = str(user["discord_uid"])
                 member = message.channel.server.get_member(discord_uid)

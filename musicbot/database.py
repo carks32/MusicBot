@@ -137,14 +137,14 @@ class LastFmSQLiteDatabase:
         #     print("Something is wrong: Len results {}".format(len(results)))
         #     return
         
-        query = "UPDATE 'weekly_discussion' SET last_winner=({}) WHERE discord_uid=({})".format(1,discord_uid)
+        query = "UPDATE 'weekly_discussion' SET last_winner=({}),exclude=(1) WHERE discord_uid=({})".format(1,discord_uid)
         self.sqlite.execute(query)
         self.db_connection.commit()
 
         if len(results) == 1:
             last_winner_discord_uid = int(results[0][0])
             print(last_winner_discord_uid)
-            query = "UPDATE 'weekly_discussion' SET last_winner=({}) WHERE discord_uid=({})".format(0,last_winner_discord_uid)
+            query = "UPDATE 'weekly_discussion' SET last_winner=({}),exclude=(1) WHERE discord_uid=({})".format(0,last_winner_discord_uid)
             self.sqlite.execute(query)
             self.db_connection.commit()
         
