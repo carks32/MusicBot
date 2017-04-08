@@ -33,14 +33,22 @@ def download(url, session, semaphore, chunk_size=1<<15):
     with (yield from semaphore): # limit number of concurrent downloads
         if url == None:
             return None
+        if url == "default.png":
+            return os.path.join(IMAGE_DOWNLOAD_PATH,"..","default.png")
         filename = url2filename(url)
-        response = yield from session.get(url)
+        try:
+            response = yield from session.get(url)
+        except:
+            return os.path.join(IMAGE_DOWNLOAD_PATH,"..","default.png")
         with closing(response), open(os.path.join(IMAGE_DOWNLOAD_PATH,filename), 'wb') as file:
             while True: # save file
-                chunk = yield from response.content.read(chunk_size)
-                if not chunk:
-                    break
-                file.write(chunk)
+                try:
+                    chunk = yield from response.content.read(chunk_size)
+                    if not chunk:
+                        break
+                    file.write(chunk)
+                except:
+                    return os.path.join(IMAGE_DOWNLOAD_PATH,"..","default.png")
     return filename, (response.status, tuple(response.headers.items()))
 
 
@@ -76,7 +84,7 @@ class ChartMaker:
             try:
                 self.selected_album_cover_urls.append(self.user_albums[i].item.get_cover_image())
             except:
-                self.selected_album_cover_urls.append("http://i.imgur.com/Gvmwrg8.png")
+                self.selected_album_cover_urls.append("default.png")
                 print("Error retrieving album image")
                 print(self.user_albums[i])
 
@@ -95,9 +103,12 @@ class ChartMaker:
         images = list()
         for image_handle in image_handles:
             if image_handle == '':
-                images.append(None)
+                images.append(Image.open(os.path.join(IMAGE_DOWNLOAD_PATH,"..","default_blank.png")))
             else:
-                images.append(Image.open(os.path.join(IMAGE_DOWNLOAD_PATH,image_handle)))
+                try:
+                    images.append(Image.open(os.path.join(IMAGE_DOWNLOAD_PATH,image_handle)))
+                except:
+                    images.append(Image.open(os.path.join(IMAGE_DOWNLOAD_PATH,"..","default.png")))
 
 
         image_size = size_multiplier * (300)
@@ -119,10 +130,14 @@ class ChartMaker:
                     new_im.paste(this_image,(x_pos,y_pos))
 
         # Clean up
-        for image_handle in image_handles:
-            if image_handle != '':
-                os.remove(os.path.join(IMAGE_DOWNLOAD_PATH,image_handle))
-        
+        try:
+            for image_handle in image_handles:
+                if image_handle != '' and image_handle != "default.png" and image_handle != "default_blank.png":
+                    os.remove(os.path.join(IMAGE_DOWNLOAD_PATH,image_handle))
+        except Exception as error:
+            print("Could not clean up images.")
+            print(error)
+
         final_image_path = os.path.join(IMAGE_DOWNLOAD_PATH,"{}_{}.jpg".format(user,str(size_multiplier)))
         new_im.save(final_image_path,"JPEG",quality=80, optimize=True)
         

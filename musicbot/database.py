@@ -32,7 +32,7 @@ class LastFmSQLiteDatabase:
     # If the table not exists, create
     def create_table(self):
         try:
-            self.sqlite.execute('CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY,lastfm_uname TEXT)'.format(tn="lastfm",nf="discord_uid",ft="INTEGER"))
+            self.sqlite.execute('CREATE TABLE {tn} ({nf} {ft} PRIMARY KEY,lastfm_uname TEXT,latest_weekly_scrobblecount INTEGER,last_updated DATE)'.format(tn="lastfm",nf="discord_uid",ft="INTEGER"))
         except Exception as error:
             print("Last.fm table creation error!")
             print(error)
@@ -103,7 +103,40 @@ class LastFmSQLiteDatabase:
         else:
             raise Exception("This discord user ({}) doesnt exist in the Last.fm database!".format(discord_uid))
 
-    
+    def update_lastfm_with_args(self,discord_uid,lastfm_username=None,last_scrobble_count=None):
+        try:
+            discord_uid = int(discord_uid)
+        except:
+            print("Probably invalid user id")
+            return
+
+        if discord_uid == None:
+            return
+        
+        # Fetch user
+        query = "SELECT * FROM lastfm WHERE discord_uid={}".format(discord_uid)
+        self.sqlite.execute(query)
+
+        result = self.sqlite.fetchone()
+
+        if not result:
+            return
+
+        db_user = result
+        lastfm_username = result[1]
+        weekly_scrobble_count = result[2]
+        last_updated = result[3]
+
+        if last_scrobble_count != None:
+            weekly_scrobble_count = last_scrobble_count
+
+        import time
+        last_updated = time.now()
+
+
+        query = "UPDATE 'lastfm' SET lastfm_uname=('{}'),latest_weekly_scrobblecount=('{}'),last_updated=('{}') WHERE discord_uid=({})".format(str(lastfm_username),weekly_scrobble_count,last_updated,discord_uid)
+        
+        
     def update(self,discord_uid,lastfm_username):
         try:
             discord_uid = int(discord_uid)
@@ -130,7 +163,6 @@ class LastFmSQLiteDatabase:
         # Find last winner
         query = "SELECT * FROM 'weekly_discussion' WHERE last_winner=(1)"
         self.sqlite.execute(query)
-
         results = self.sqlite.fetchall()
 
         # if len(results) > 1:

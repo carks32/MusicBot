@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import shlex
@@ -117,6 +118,8 @@ class MusicBot(discord.Client):
         self.http.user_agent += ' MusicBot/%s' % BOTVERSION
 
         self.lastfm = Lastfm(self.config)
+
+    
 
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
@@ -754,9 +757,111 @@ class MusicBot(discord.Client):
         await self.delete_message(generatingMessageProc)
         await self.safe_send_message(channel,error_message)
         
-        
+    def lastfm_user_from_mb_command(self,mb):
+        if mb['has_lastfm_user']:
+            return mb['lastfm_user']
+        else:
+            return None
+    
+    def discord_user_from_mb_command(self,mb):
+        if mb['has_discord_user']:
+            return mb['discord_user']
+        else:
+            return None
+    
+    def check_user_if_exists(self,user,users):
+        try:
+            exists = False
+            for u in users:
+                if u['discord_user'].id == user['discord_user'].id:
+                    exists = True
+            return exists
+        except:
+            return False
 
-    async def cmd_chart(self,message):
+    # !!!! Metal Music Discord server stuff starts here  !!!! #
+    def handle_mb_command(self,message,mentions_param,command):
+        additional_params = list()
+        # First, check if there are any mentions
+        mentioned_users = list()
+        if mentions_param:
+            for user in mentions_param.copy():
+                mentioned_users.append(user)
+
+        # If there are mentioned user(s), assume that every other user in the message will also be mentioned,i.e., you cant do !nowplaying arkenther @arkenthera at the same time.
+        users = list()
+        if len(mentioned_users) > 0:
+            for mention_user in mentioned_users:
+                try:
+                    lastfm_user = self.lastfm.db.get_lastfm_user(mention_user.id)
+                    users.append( {'lastfm_user': lastfm_user, 'discord_user': mention_user, 'has_discord_user': True,'has_lastfm_user': True } )
+                except:
+                    users.append( { 'discord_user': mention_user, 'has_discord_user': True,'has_lastfm_user': False } )
+
+            # Strip away the command and the mentions
+            content = message.content
+            content = content.replace("!{} ".format(command),"")
+
+            content = re.sub(r"^<@.+?>","",content).strip()
+            additional_params = content.split()
+        else:
+            # No mentioned users, assume we got Last.fm users
+            users_in_content = parse_mb_command(command,message.content)
+
+            # When the message has no user input : !nowplaying
+            if users_in_content == None:
+                try:
+                    lastfm_user = self.lastfm.db.get_lastfm_user(message.author.id)
+                    users.append( { 'lastfm_user': lastfm_user, 'discord_user': message.author, 'has_discord_user': True, 'has_lastfm_user': True } )
+                except:
+                    users.append( { 'discord_user': message.author, 'has_discord_user': True, 'has_lastfm_user': False } )
+            else:
+                # The message has at least one user: !nowplaying arkenthera
+                # Check each user in our database
+                # And discord member info
+                # Also check our db to see if there is a registered user name and add it
+                lastfm_users = list()
+                try:
+                    lastfm_users = self.lastfm.db.get_lastfm_users()
+                except:
+                    print("There is a problem with retrieving users.")
+                
+                for user_in_content in users_in_content:
+                    print("Processing {}".format(user_in_content))
+                    found_on_db = False
+                    for user in lastfm_users:
+                        discord_id = user[0]
+                        lastfm_user = user[1]
+
+                        if lastfm_user == user_in_content:
+                            discord_user = message.channel.server.get_member(str(discord_id))
+                            if discord_user != None:
+                                users.append( { 'lastfm_user': lastfm_user, 'discord_user': discord_user, 'has_discord_user': True, 'has_lastfm_user': True } )
+                            else:
+                                users.append( { 'lastfm_user': lastfm_user, 'has_discord_user': False, 'has_lastfm_user': True } )
+                            found_on_db = True
+                
+                    if found_on_db == False:
+                        users.append( { 'lastfm_user': user_in_content, 'has_discord_user': False, 'has_lastfm_user': True } )
+
+                for user in lastfm_users:
+                    discord_id = user[0]
+                    lastfm_user = user[1]
+
+                    discord_user = message.channel.server.get_member(str(discord_id))
+
+                    if str(discord_id) == message.author.id:
+                        user_to_append = None
+                        if discord_user != None:
+                            user_to_append = { 'lastfm_user': lastfm_user, 'discord_user': discord_user, 'has_discord_user': True, 'has_lastfm_user': True }
+                        else:
+                            user_to_append = { 'lastfm_user': lastfm_user, 'has_discord_user': False, 'has_lastfm_user': True }
+
+                        if not self.check_user_if_exists(user_to_append,users):
+                            users.append(user_to_append)
+        return users,additional_params
+
+    async def cmd_chart(self,message,user_mentions=None):
         """
         Usage:
             {command_prefix}chart [username] [type] [size]
@@ -783,42 +888,54 @@ class MusicBot(discord.Client):
         s = None
         u = None
 
-        if len(split) != 1:
-            info = split[1].split(" ")
-            #print(info)
+        if len(user_mentions) != 0:
+            users,additional_params = self.handle_mb_command(message,user_mentions,"chart")
+            u = users[0]["lastfm_user"]
 
-            first_element = info[0]
-
-            for t in valid_types:
-                if t == first_element:
-                    first_element_is_type = True
-
-            for s in valid_sizes:
-                if s == first_element:
-                    first_element_is_size = True
-
-            if not first_element_is_size and not first_element_is_type:
-                first_element_is_username = True
-
-            #print("First Element is username: {} First Element is type: {} First Element is size: {}".format(first_element_is_username,first_element_is_type,first_element_is_size))
-            if first_element_is_username:
-                u = info[0]
+            if len(additional_params) == 1:
+                t = additional_params[0]
             
-            if first_element_is_size:
-                s = info[0]
+            if len(additional_params) == 2:
+                t = additional_params[0]
+                s = additional_params[1]
+        else:
 
-            if first_element_is_type:
-                t = info[0]
+            if len(split) != 1:
+                info = split[1].split(" ")
+                #print(info)
 
-            if len(info) == 2 and first_element_is_username:
-                t = info[1]
-            
-            if len(info) == 3 and first_element_is_username:
-                t = info[1]
-                s = info[2]
+                first_element = info[0]
 
-            if len(info) == 2 and not first_element_is_username:
-                s = info[1]
+                for t in valid_types:
+                    if t == first_element:
+                        first_element_is_type = True
+
+                for s in valid_sizes:
+                    if s == first_element:
+                        first_element_is_size = True
+
+                if not first_element_is_size and not first_element_is_type:
+                    first_element_is_username = True
+
+                #print("First Element is username: {} First Element is type: {} First Element is size: {}".format(first_element_is_username,first_element_is_type,first_element_is_size))
+                if first_element_is_username:
+                    u = info[0]
+                
+                if first_element_is_size:
+                    s = info[0]
+
+                if first_element_is_type:
+                    t = info[0]
+
+                if len(info) == 2 and first_element_is_username:
+                    t = info[1]
+                
+                if len(info) == 3 and first_element_is_username:
+                    t = info[1]
+                    s = info[2]
+
+                if len(info) == 2 and not first_element_is_username:
+                    s = info[1]
 
             #print("User Name: {} Type: {} Size: {}".format(u,t,s))
 
@@ -895,7 +1012,7 @@ class MusicBot(discord.Client):
             print(e)
             return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
 
-    async def cmd_lastfm(self,message,username=None):
+    async def cmd_lastfm(self,message,user_mentions=None):
         """
         Usage:
             {command_prefix}lastfm [username]
@@ -903,21 +1020,35 @@ class MusicBot(discord.Client):
         Returns Last.fm summary of the user.
         """
 
-        if username == "*":
+        if message.content == "!lastfm *":
             markdown = self.lastfm.db.list_users()
             return Response(markdown)
+        
+        users,additional_params = self.handle_mb_command(message,user_mentions,'lastfm')
 
-        if username == None:
-            # If the user exists, it wil return the username
-            username = self.lastfm.db.get_lastfm_user(message.author.id)
+        markdown = ""
+        Ok = False
+        if len(users) > 1:
+            markdown = "This command doesnt support more than 1 users."
 
-        if username == None:
-            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
-        try:
-            markdown = self.lastfm.get_user_summary(username)
+        if len(users) == 1:
+            try:
+                username = self.lastfm_user_from_mb_command(users[0])
+                if username != None:
+                    markdown = self.lastfm.get_user_summary(username)
+                    Ok = True
+                else:
+                    markdown = "User could not be found. Try following up the command with your user name."
+            except:
+                markdown = "There was a problem retrieving Last.fm summary."
+
+        if len(users) == 0:
+            markdown = "User could not be found. Try following up the command with your user name."
+        
+        if Ok:
             return Response(markdown)
-        except:
-            return Response("There was a problem retrieving Last.fm summary.",reply=True,delete_after=30)
+        else:
+            return Response(markdown,delete_after=30,reply=True)
 
     async def cmd_leaderboards(self,message):
         """
@@ -967,7 +1098,7 @@ class MusicBot(discord.Client):
 
         return Response(markdown)
 
-    async def cmd_recent(self,message):
+    async def cmd_recent(self,message,user_mentions=None):
         """
         Usage:
             {command_prefix}recent [username]
@@ -975,52 +1106,41 @@ class MusicBot(discord.Client):
         Returns Last.fm recent tracks of user.
         """
 
-        split = message.content.split('!recent ')
+        users,additional_params = self.handle_mb_command(message,user_mentions,"recent")
 
-        index = 0
-        username = None
-
-        if len(split) != 1:
-            info = split[1].split(" ")
-
-            # !recent N or !recent username
-            if len(info) == 1:
-                try:
-                    tryIndex = int(info[0])
-                    index = tryIndex
-                except:
-                    username = info[0]
-
-            # 0 is username, 1 is index
-            if len(info) == 2:
-                username = info[0]
-                try:
-                    tryIndex = int(info[1])
-                    index = tryIndex
-                except:
-                    return Response("There was a problem with this command.",delete_after=30)
-
-
+        
+        if len(users) == 0:
+            return Response("There was a problem retrieving users..")
         else:
-            print("Split len not equal 1")
-            username = None
-            index = 0
+            mb_user = users[0]
 
-        if username == None:
-            # If the user exists, it wil return the username
-            username = self.lastfm.db.get_lastfm_user(message.author.id)
+            if len(additional_params) == 0:
+                if len(users) != 1:
+                    index = users[1]["lastfm_user"]
+                else:
+                    index = 0
+            else:
+                index = additional_params[0]
+            try:
+                index = int(index)
+            except:
+                index = 0
+                return Response("Invalid index.")
 
-        if username == None:
-            return Response("User could not be found. Try following up the command with your user name.",reply=True,delete_after=60)
-        try:
-            markdown = self.lastfm.get_recent_tracks(username,index)
-            return Response(markdown)
-        except Exception as error:
-            print(error)
-            return Response("There was a problem retrieving Last.fm recent tracks.",reply=True,delete_after=30)
+            lastfm_user = self.lastfm_user_from_mb_command(mb_user)
+
+            if lastfm_user == None:
+                return Response("No Last.fm user found for this user.")
+            else:
+                try:
+                    markdown = self.lastfm.get_recent_tracks(lastfm_user,index)
+                    return Response(markdown)
+                except Exception as error:
+                    print(error)
+                    return Response("There was a problem retrieving Last.fm recent tracks.",reply=True,delete_after=30)
     
 
-    async def cmd_taste(self,message):
+    async def cmd_taste(self,message,user_mentions=None):
         """
         Usage:
             {command_prefix}taste [lastfmuser1] [lastfmuser2]
@@ -1028,74 +1148,109 @@ class MusicBot(discord.Client):
         Compares two users. User1 is omitable if you linked your Last.fm account using !setlastfm.
         """
 
-        users = parse_mb_command('taste',message.content)
+        users,additional_params = self.handle_mb_command(message,user_mentions,'taste')
+        response_text = ""
+        procmsg = None
 
-        if users != None:
-            user1 = ""
-            user2 = ""
-            # A registered user is comparing himself with another user
-            if len(users) == 1:
-                user1 = self.lastfm.db.get_lastfm_user(message.author.id)
-                user2 = users[0]
+        if len(users) == 1:
+            mb_user = users[0]
+            if mb_user["discord_user"].id == message.author.id:
+                return Response("You're the perfect match for yourself! <:FeelsAmazingMan:300218680921423872>")
+            else:
+                try:
+                    users.append({ 'has_discord_user': True, 'has_lastfm_user': True, 'discord_user':message.author, 'lastfm_user': self.lastfm.db.get_lastfm_user(message.author.id)})
+                except:
+                    response_text = "There was a problem with the command."
 
-            if len(users) == 2:
-                user1 = users[0]
-                user2 = users[1]
-            
-            try:
-                taste_result = self.lastfm.taste(user1,user2)
-                text = ""
-
-                if taste_result['playCountUser1'] == 0 and taste_result['playCountUser2'] == 0:
-                    text = "**{}** and **{}** haven't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user1,user2)
-
-                if taste_result['playCountUser1'] == 0:
-                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user1)
-
-                if taste_result['playCountUser2'] == 0:
-                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user2)
-
-                common_artist_len = len(taste_result['common_artists'])
-
-                if common_artist_len == 0:
-                    text = "**{}** and **{}** don't listen to same music.".format(user1,user2)
-                
-                if common_artist_len == 3:
-                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
-                    artistName3 = taste_result['common_artists'][2]['artist'].item.name
-
-                    text = "**{}** and **{}** both listen to **{}**, **{}** and **{}**.".format(user1,user2,artistName1,artistName2,artistName3)
-
-                if common_artist_len == 2:
-                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
-
-                    text = "**{}** and **{}** both listen to **{}** and **{}**.".format(user1,user2,artistName1,artistName2)
-
-                if common_artist_len == 1:
-                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                    text = "**{}** and **{}** both listen to **{}**.".format(user1,user2,artistName1)
-
-                if common_artist_len > 3:
-                    artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                    artistName2 = taste_result['common_artists'][1]['artist'].item.name
-                    artistName3 = taste_result['common_artists'][2]['artist'].item.name
-
-                    text = "**{}** and **{}** both listen to **{}**, **{}**, **{}** and {} other".format(user1,user2,artistName1,artistName2,artistName3,(common_artist_len - 3))
-
-                    if common_artist_len - 3 == 1:
-                        text += " artist."
-                    else:
-                        text += " artists."
-
-                return Response(text)
-            except Exception as error:
-                print(error)
-                return Response("There was a problem with the command.",delete_after=30)    
+        Ok = False
+        if len(users) != 2:
+            response_text = "There arent enough users to compare! Need 2, got {}".format(len(users))
         else:
-            return Response("There was a problem with the command.",delete_after=30)
+            discord_userA = self.discord_user_from_mb_command(users[0])
+            lastfm_userA = self.lastfm_user_from_mb_command(users[0])
 
+            discord_userB = self.discord_user_from_mb_command(users[1])
+            lastfm_userB = self.lastfm_user_from_mb_command(users[1])
+
+            user1 = lastfm_userA
+            user2 = lastfm_userB
+
+            if lastfm_userA == None or lastfm_userB == None:
+                response_text = "There was a problem with the command.Could not find Last.fm users."
+            else:
+                try:
+                    procmsg = await self.safe_send_message(message.channel,"<:cake:300221990080610305> *Working...* <:cake:300221990080610305>")
+
+                    # User 1
+                    user_display_nameA = ""
+                    if lastfm_userA != None:
+                        user_display_nameA = lastfm_userA
+
+                    if discord_userA != None:
+                        user_display_nameA = discord_userA.display_name
+
+                    user_display_nameB = ""
+                    if lastfm_userB != None:
+                        user_display_nameB = lastfm_userB
+
+                    if discord_userB != None:
+                        user_display_nameB = discord_userB.display_name
+
+                    taste_result = self.lastfm.taste(user1,user2)
+                    text = ""
+
+                    if taste_result['playCountUser1'] == 0 and taste_result['playCountUser2'] == 0:
+                        text = "**{}** and **{}** haven't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameA,user_display_nameB)
+
+                    if taste_result['playCountUser1'] == 0:
+                        text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameA)
+
+                    if taste_result['playCountUser2'] == 0:
+                        text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameB)
+
+                    common_artist_len = len(taste_result['common_artists'])
+
+                    if common_artist_len == 0:
+                        text = "**{}** and **{}** don't listen to same music.".format(user_display_nameA,user_display_nameB)
+                    
+                    if common_artist_len == 3:
+                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
+                        artistName3 = taste_result['common_artists'][2]['artist'].item.name
+
+                        text = "**{}** and **{}** both listen to **{}**, **{}** and **{}**.".format(user_display_nameA,user_display_nameB,artistName1,artistName2,artistName3)
+
+                    if common_artist_len == 2:
+                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
+
+                        text = "**{}** and **{}** both listen to **{}** and **{}**.".format(user_display_nameA,user_display_nameB,artistName1,artistName2)
+
+                    if common_artist_len == 1:
+                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                        text = "**{}** and **{}** both listen to **{}**.".format(user_display_nameA,user_display_nameB,artistName1)
+
+                    if common_artist_len > 3:
+                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
+                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
+                        artistName3 = taste_result['common_artists'][2]['artist'].item.name
+
+                        text = "**{}** and **{}** both listen to **{}**, **{}**, **{}** and {} other".format(user_display_nameA,user_display_nameB,artistName1,artistName2,artistName3,(common_artist_len - 3))
+
+                        if common_artist_len - 3 == 1:
+                            text += " artist."
+                        else:
+                            text += " artists."
+                    response_text = text
+                    Ok = True
+                except:
+                    pass
+        
+        if Ok:
+            await self.delete_message(procmsg)
+            return Response(response_text)
+        else:
+            return Response(response_text,reply=True,delete_after=30)
 
 
 
@@ -1118,7 +1273,8 @@ class MusicBot(discord.Client):
             print(error)
             return Response("There was a problem saving your Last.fm information!",reply=True)
 
-    async def cmd_nowplaying(self,message,username=None):
+
+    async def cmd_nowplaying(self,message,user_mentions=None):
         """
         Usage:
             {command_prefix}nowplaying [username]
@@ -1126,52 +1282,39 @@ class MusicBot(discord.Client):
         Returns Last.fm 'currently scrobbling' song.
         """
 
+        users,additional_params = self.handle_mb_command(message,user_mentions,'nowplaying')
+        
+        response_text = ""
+        
+        no_user_found = True
 
-        # if user_mentions != None:
-        #     usr = user_mentions[0]
-        #     username = self.lastfm.db.get_lastfm_user(message.author.id)
+        for user in users:
+            discord_user = self.discord_user_from_mb_command(user)
+            lastfm_user = self.lastfm_user_from_mb_command(user)
 
-        if username == None:
-            # If the user exists, it wil return the username
-            username = self.lastfm.db.get_lastfm_user(message.author.id)
+            user_display_name = ""
+            if lastfm_user != None:
+                user_display_name = lastfm_user
 
-        if username == None:
-            return Response("User could not be found. Try following up the command with your user name. Check out `!setlastfm`.",reply=True,delete_after=60)
+            if discord_user != None:
+                user_display_name = discord_user.display_name
 
-        if username == "*":
-            # Get all Last.fm users
-            try:
-                lastfm_users = self.lastfm.db.get_lastfm_users()
-            except:
-                return Response("There was a problem retrieving all registered users!")
+            if lastfm_user == None:
+                break
 
-            listeners = list()
+            no_user_found = False
+            user_track = self.lastfm.get_now_playing(lastfm_user)
 
-            for user in lastfm_users:
-                lastfm_username = user[1]
-                track = self.lastfm.get_now_playing(lastfm_username)
-
-                if track != None:
-                    discord_id = user[0]
-                    discord_member = message.channel.server.get_member(str(discord_id))
-
-                    listeners.append(UserTrack(discord_member.display_name, track.artist.name, track.title))
-
-            if len(listeners) == 0:
-                return Response("No one is listening to any music.")
-
-            if len(listeners) == 1:
-                response_text = "1 member is playing music:\n"
+            if user_track == None:
+                response_text += "**{}** is not listening to any music. <:FeelsMetalHead:279991636144947200> \n".format(user_display_name)
             else:
-                response_text = "{} members are playing music:\n".format(len(listeners))
-
-            for user_track in listeners:
-                response_text += ":musical_note: {}.\n".format(self.lastfm.get_user_listening_text(user_track))
-
+                response_text += ":musical_note: {}.\n".format(self.lastfm.get_user_listening_text(UserTrack(user_display_name, user_track.artist.name, user_track.title)))
+        
+        
+        if no_user_found:
+            return Response("User could not be found. Try following up the command with your user name. Check out `!setlastfm`.",reply=True,delete_after=60)
+        else:
             return Response(response_text)
-
-        markdown = self.lastfm.get_now_playing_markdown(username)
-        return Response(markdown)
 
     async def cmd_weeklyroll(self,message):
         if message.author.id != self.config.owner_id:
