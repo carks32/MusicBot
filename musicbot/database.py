@@ -11,6 +11,18 @@ class LastFmSQLiteDatabase:
         self.sqlite = self.db_connection.cursor()
 
         self.create_table()
+
+    def insert_into_wd(self,discord_uid,last_winner,exclude,yt_link):
+        if yt_link == None:
+            yt_link = "null"
+        query = "INSERT INTO 'weekly_discussion' ('discord_uid','last_winner','exclude','youtube_link') VALUES({},{},{},{})".format(discord_uid,last_winner,exclude,yt_link)
+        try:
+            print("Executing query")
+            self.sqlite.execute(query)
+        except:
+            print("Problem inserting to weekly_discussion")
+
+        self.db_connection.commit()
     
     # Returns weekly discussion user table excluding last winner and users marked as 'exclude'
     def get_weekly_discussion_users(self):
@@ -25,7 +37,8 @@ class LastFmSQLiteDatabase:
             discord_uid = result[0]
             last_winner = result[1]
             exclude = result[2]
-            users.append(dict({ "discord_uid": discord_uid, 'last_winner': last_winner, 'exclude': exclude }))
+            yt_link = result[3]
+            users.append(dict({ "discord_uid": discord_uid, 'last_winner': last_winner, 'exclude': exclude, 'yt_link':yt_link }))
 
         return users
 
@@ -152,6 +165,21 @@ class LastFmSQLiteDatabase:
         self.sqlite.execute(query)
             
         self.db_connection.commit()
+
+
+    def update_weekly_dc_setlink(self,discord_uid,yt_link):
+        try:
+            discord_uid = int(discord_uid)
+        except:
+            print("Probably invalid user id")
+            return
+
+        query = "UPDATE 'weekly_discussion' SET youtube_link=('{}'),last_winner=(1),exclude=(1) WHERE discord_uid=({})".format(yt_link,discord_uid)
+        print(query)
+        self.sqlite.execute(query)
+        self.db_connection.commit()
+
+        
 
     def update_weekly_dc(self,discord_uid):
         try:

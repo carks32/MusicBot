@@ -11,6 +11,7 @@ import asyncio
 import pylast
 import traceback
 import random
+import youtube_dl
 
 from discord import utils
 from discord.object import Object
@@ -827,7 +828,6 @@ class MusicBot(discord.Client):
                     print("There is a problem with retrieving users.")
                 
                 for user_in_content in users_in_content:
-                    print("Processing {}".format(user_in_content))
                     found_on_db = False
                     for user in lastfm_users:
                         discord_id = user[0]
@@ -936,8 +936,14 @@ class MusicBot(discord.Client):
 
                 if len(info) == 2 and not first_element_is_username:
                     s = info[1]
+            
+            if t == None:
+                t = "overall"
 
-            #print("User Name: {} Type: {} Size: {}".format(u,t,s))
+            if s == None:
+                s = "5x5"
+            print("User Name: {} Type: {} Size: {}".format(u,t,s))
+            
 
             if s not in valid_sizes:
                 valid_sizes_str = ""
@@ -957,7 +963,7 @@ class MusicBot(discord.Client):
             t = "overall"
 
         if s == None:
-            s = 5
+            s = "5x5"
 
         if u == None:
             try:
@@ -985,6 +991,12 @@ class MusicBot(discord.Client):
         await cm.start()
     
     async def cmd_bandinfo(self,message,bandName=None):
+        """
+        Usage:
+            {command_prefix}bandinfo [artist_name]
+
+        Returns an overview of the artist.
+        """
         split = message.content.split('!bandinfo ')
         try:
             bandName = split[1]
@@ -996,6 +1008,12 @@ class MusicBot(discord.Client):
 
     # !!! This command needs handling of database users !!!
     async def cmd_band(self,message,bandName=None):
+        """
+        Usage:
+            {command_prefix}band [LASTFM_USER] [ARTIST]
+
+        Returns the scrobble count of the artist by user.
+        """        
         split = message.content.split('!band ')
         try:
             info = split[1].split(" ")
@@ -1288,9 +1306,46 @@ class MusicBot(discord.Client):
         
         no_user_found = True
 
-        for user in users:
+        
+        if len(users) == 2 and users[0]["lastfm_user"] == "*":
+            try:
+                lastfm_users = self.lastfm.db.get_lastfm_users()
+            except:
+                return Response("There was a problem retrieving all registered users!")
+
+            no_user_found = False
+
+            listeners = list()
+
+            for user in lastfm_users:
+                lastfm_username = user[1]
+                track = self.lastfm.get_now_playing(lastfm_username)
+
+                if track != None:
+                    discord_id = user[0]
+                    discord_member = message.channel.server.get_member(str(discord_id))
+                    if discord_member == None:
+                        continue
+                    display_name = discord_member.display_name
+
+                    listeners.append(UserTrack(display_name, track.artist.name, track.title))
+
+            if len(listeners) == 0:
+                return Response("No one is listening to any music.")
+
+            if len(listeners) == 1:
+                response_text = "1 member is playing music:\n"
+            else:
+                response_text = "{} members are playing music:\n".format(len(listeners))
+
+            for user_track in listeners:
+                response_text += ":musical_note: {}.\n".format(self.lastfm.get_user_listening_text(user_track))
+        else:
+            user = users[0]
             discord_user = self.discord_user_from_mb_command(user)
             lastfm_user = self.lastfm_user_from_mb_command(user)
+
+            no_user_found = False
 
             user_display_name = ""
             if lastfm_user != None:
@@ -1300,9 +1355,8 @@ class MusicBot(discord.Client):
                 user_display_name = discord_user.display_name
 
             if lastfm_user == None:
-                break
+                no_user_found = True
 
-            no_user_found = False
             user_track = self.lastfm.get_now_playing(lastfm_user)
 
             if user_track == None:
@@ -1315,6 +1369,133 @@ class MusicBot(discord.Client):
             return Response("User could not be found. Try following up the command with your user name. Check out `!setlastfm`.",reply=True,delete_after=60)
         else:
             return Response(response_text)
+    
+    async def cmd_wdprivate(self,server,message):
+        weekly_members = list()
+        for member in server.members:
+            roles = member.roles
+            
+            for r in roles:
+                print(r)
+                print(str(r))
+                if str(r) == "Weekly":
+                    weekly_members.append(member)
+
+        for wmember in weekly_members:
+            self.lastfm.db.insert_into_wd(wmember.id,0,0,None)
+    
+    async def cmd_wd(self,message,user_mentions=None):
+        users,additional_params = self.handle_mb_command(message,user_mentions,'wd')
+
+        weekly_users = self.lastfm.db.get_weekly_discussion_users()
+        nonexcluded = list()
+        last_winner = None
+        for weekly_user in weekly_users:
+            if weekly_user["last_winner"] == 1:
+                last_winner = weekly_user
+        
+        if last_winner != None:
+            last_winner_user = await self.get_user_info(last_winner["discord_uid"])
+            last_winner_displayname = last_winner_user.display_name
+        else:
+            last_winner_displayname = None
+        
+        response_text = ""
+        if len(user_mentions) == 0:
+            if last_winner != None:
+                # Print out the current
+                yt_link = last_winner['yt_link']
+                if yt_link == None:
+                    return Response("The video link doesnt exists yet.")
+                video = self.get_video_from_yt_link(last_winner['yt_link'])
+                if video == None:
+                    return Response("There was a problem retrieving the video!")
+
+                response_text = "Current album is from: <@{}> Title: **{}** Link: {}".format(last_winner["discord_uid"],video['title'],last_winner['yt_link'])
+            else:
+                response_text = "No winner yet!"
+        else:
+            weekly_users = self.lastfm.db.get_weekly_discussion_users()
+            response_text = "This user is not in the weekly list!"
+            for weekly_user in weekly_users:
+                wd_user_discord = await self.get_user_info(weekly_user["discord_uid"])
+                if wd_user_discord == None:
+                    return Response("There was a problem retrieving this user.")
+                else:
+                    if wd_user_discord.id == users[0]["discord_user"].id:
+                        wd_user_yt_link = weekly_user["yt_link"]
+                        if wd_user_yt_link == None:
+                            response_text = "<@{}> has not shared an album yet!".format(wd_user_discord.id)
+                        else:
+                            video = self.get_video_from_yt_link(wd_user_yt_link)
+                            response_text = "<@{}>'s album was {} {}".format(wd_user_discord.id,video["title"],wd_user_yt_link)
+
+        return Response(response_text)
+
+    def get_video_from_yt_link(self,url):
+        ydl = youtube_dl.YoutubeDL({'outtmpl': '%(id)s%(ext)s'})
+        video = None
+        try:
+            with ydl:
+                result = ydl.extract_info(
+                    url,
+                    download=False # We just want to extract the info
+                )
+            
+
+            if 'entries' in result:
+                video = result['entries'][0]
+            else:
+                video = result
+        except:
+            return None
+        return video
+        
+
+    async def cmd_wdset(self,message,user_mentions=None):
+        """
+        Usage:
+            {command_prefix}wdset @user yt_link
+
+        Set this weeks youtube link and user.Only usable by admins and mods.
+        """
+
+        users,additional_params = self.handle_mb_command(message,user_mentions,"wdset")
+
+        ydl = youtube_dl.YoutubeDL({'outtmpl': '%(id)s%(ext)s'})
+
+        if len(additional_params) != 1:
+            return Response("There is a problem with the command. No video link found.")
+
+        input_vid = additional_params[0]
+        video = None
+        try:
+            with ydl:
+                result = ydl.extract_info(
+                    input_vid,
+                    download=False # We just want to extract the info
+                )
+            
+
+            if 'entries' in result:
+                video = result['entries'][0]
+            else:
+                video = result
+        except:
+            return Response("There was a problem retrieving data from the youtube link!")
+
+        if video == None:
+            return Response("There was a problem retrieving data from the youtube link!")
+        
+        title = video['title']
+        user = users[0]["discord_user"]
+
+        response_text = "Current album is set to **{}** by **{}**. Metal on! <@&300606005463482370>".format(title,user.display_name)
+
+        self.lastfm.db.update_weekly_dc_setlink(user.id,input_vid)
+        return Response(response_text)
+        
+
 
     async def cmd_weeklyroll(self,message):
         if message.author.id != self.config.owner_id:
@@ -1354,7 +1535,7 @@ class MusicBot(discord.Client):
         except:
             return Response("There was a problem picking a random user. Please try again.")
 
-    async def cmd_weeklyrolllist(self,message):
+    async def cmd_wdlist(self,message):
         try:
             weekly_users = self.lastfm.db.get_weekly_discussion_users()
             nonexcluded = list()
@@ -1375,12 +1556,13 @@ class MusicBot(discord.Client):
             markdown = "```Markdown\n{} users in the weekly roll list.Last winner was {} and is excluded! \n\n".format(len(nonexcluded),last_winner_displayname)
             for user in nonexcluded:
                 discord_uid = str(user["discord_uid"])
+                yt_link = user["yt_link"]
                 member = message.channel.server.get_member(discord_uid)
                 if member == None:
                     member = await self.get_user_info(discord_uid)
                 display_name = member.display_name
 
-                markdown += "{} - {} \n".format(member,display_name)
+                markdown += "{} - {}  \n".format(member,display_name)
             markdown += "```"
             return Response(markdown)
         except Exception as error:
