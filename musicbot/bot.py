@@ -1046,22 +1046,32 @@ class MusicBot(discord.Client):
 
         markdown = ""
         Ok = False
-        if len(users) > 1:
-            markdown = "This command doesnt support more than 1 users."
-
-        if len(users) == 1:
-            try:
-                username = self.lastfm_user_from_mb_command(users[0])
+        if len(user_mentions) == 0:
+            username = self.lastfm_user_from_mb_command(users[0])
+            if username == "*":
+                markdown = self.lastfm.db.list_users()
+                return Response(markdown)
+            else:
                 if username != None:
                     markdown = self.lastfm.get_user_summary(username)
                     Ok = True
-                else:
-                    markdown = "User could not be found. Try following up the command with your user name."
-            except:
-                markdown = "There was a problem retrieving Last.fm summary."
+        else:
+            if len(users) > 1:
+                Ok = False
+                markdown = "This command doesnt support more than 1 users."
+            if len(users) == 1:
+                try:
+                    username = self.lastfm_user_from_mb_command(users[0])
+                    if username != None:
+                        markdown = self.lastfm.get_user_summary(username)
+                        Ok = True
+                    else:
+                        markdown = "User could not be found. Try following up the command with your user name."
+                except:
+                    markdown = "There was a problem retrieving Last.fm summary."
 
-        if len(users) == 0:
-            markdown = "User could not be found. Try following up the command with your user name."
+            if len(users) == 0:
+                markdown = "User could not be found. Try following up the command with your user name."
         
         if Ok:
             return Response(markdown)
@@ -1173,7 +1183,7 @@ class MusicBot(discord.Client):
         if len(users) == 1:
             mb_user = users[0]
             if mb_user["discord_user"].id == message.author.id:
-                return Response("You're the perfect match for yourself! <:FeelsAmazingMan:300218680921423872>")
+                return Response("You're the perfect match for yourself! <:FeelsAmazingMan:300685508604985344>")
             else:
                 try:
                     users.append({ 'has_discord_user': True, 'has_lastfm_user': True, 'discord_user':message.author, 'lastfm_user': self.lastfm.db.get_lastfm_user(message.author.id)})
@@ -1411,7 +1421,7 @@ class MusicBot(discord.Client):
                 if video == None:
                     return Response("There was a problem retrieving the video!")
 
-                response_text = "Current album is from: <@{}> Title: **{}** Link: {}".format(last_winner["discord_uid"],video['title'],last_winner['yt_link'])
+                response_text = "Current album is from: **{}** Title: **{}** Link: {}".format(last_winner_displayname,video['title'],last_winner['yt_link'])
             else:
                 response_text = "No winner yet!"
         else:
@@ -1490,7 +1500,7 @@ class MusicBot(discord.Client):
         title = video['title']
         user = users[0]["discord_user"]
 
-        response_text = "Current album is set to **{}** by **{}**. Metal on! <@&300606005463482370>".format(title,user.display_name)
+        response_text = "Current album is set to **{}** by **{}**. Metal on! <@&299516505169854477>".format(title,user.display_name)
 
         self.lastfm.db.update_weekly_dc_setlink(user.id,input_vid)
         return Response(response_text)
