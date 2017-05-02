@@ -86,7 +86,7 @@ class ChartMaker:
             except:
                 self.selected_album_cover_urls.append("default.png")
                 print("Error retrieving album image")
-                print(self.user_albums[i])
+                #print(self.user_albums[i])
 
 
         urls = self.selected_album_cover_urls

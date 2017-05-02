@@ -224,7 +224,7 @@ class Lastfm:
         library = lastfm_user.get_library()
         libUser = library.get_user()
 
-        limit = size * size
+        limit = 25
 
         print("Fetching albums for {} - Limit: {}".format(user,limit))
 

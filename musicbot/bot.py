@@ -1572,7 +1572,7 @@ class MusicBot(discord.Client):
                     member = await self.get_user_info(discord_uid)
                 display_name = member.display_name
 
-                markdown += "{} - {}  \n".format(member,display_name)
+                markdown += "{} - {}\n".format(member,display_name)
             markdown += "```"
             return Response(markdown)
         except Exception as error:
@@ -2678,7 +2678,33 @@ class MusicBot(discord.Client):
     async def on_message(self, message):
         await self.wait_until_ready()
 
+        if message.author.id == "174215624313012224":
+            chance = random.randint(0,15)
+            if chance == 0:
+                await self.add_reaction(message,"puke:260735100843458561")
+
         message_content = message.content.strip()
+        if 'meme' in message_content.lower():
+            # Get lastfm user
+            chance = random.randint(0,1)
+            if chance == 0:
+                try:
+                    lastfm_user = self.lastfm.db.get_lastfm_user(message.author.id)
+                    if lastfm_user != None:
+                        # Get top albums
+                        user_albums = self.lastfm.get_user_albums(lastfm_user)
+                        if len(user_albums) >= 0:
+                            top_album = user_albums[0]
+                            if len(user_albums) >= 6:
+                                top_album = user_albums[random.randint(0,6)]
+                            artist_name = top_album.item.artist.name
+                            text = "<:CoreYearly:308334429510696970> No, **{}** *IS* a meme. <:CoreYearly:308334429510696970>".format(artist_name)
+                            await self.safe_send_message(message.channel,text)
+                except:
+                    pass
+            else:
+                print("Better luck next time")
+
         if not message_content.startswith(self.config.command_prefix):
             return
 
