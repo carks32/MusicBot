@@ -1029,7 +1029,7 @@ class MusicBot(discord.Client):
         except Exception as e:
             print(e)
             return Response("There was an error retrieving the band info. Sorry!",delete_after=30)
-
+    
     async def cmd_lastfm(self,message,user_mentions=None):
         """
         Usage:
@@ -2678,10 +2678,10 @@ class MusicBot(discord.Client):
     async def on_message(self, message):
         await self.wait_until_ready()
 
-        if message.author.id == "174215624313012224":
-            chance = random.randint(0,15)
-            if chance == 0:
-                await self.add_reaction(message,"puke:260735100843458561")
+        # if message.author.id == "174215624313012224":
+        #     chance = random.randint(0,15)
+        #     if chance == 0:
+        #         await self.add_reaction(message,"puke:260735100843458561")
 
         message_content = message.content.strip()
         if 'meme' in message_content.lower():
