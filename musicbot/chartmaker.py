@@ -74,7 +74,7 @@ class ChartMaker:
         if len(self.user_albums) < self.size * self.size:
             error_string = "<:x:277841619464617984> Error! Error! *{}* has **{}** albums but you requested **{}**.<:x:277841619464617984>".format(self.user,len(self.user_albums),str(self.size*self.size))
             if self.user == 'smurmelade' and len(self.user_albums) == 0:
-                error_string = "<:Thangery:299797179311325187>"
+                error_string = "<:thangery:306181111044767765>"
             await self.errorCallback(error_string,self.channel,self.generatingMessageProc)
             return
 

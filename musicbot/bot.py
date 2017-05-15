@@ -108,9 +108,9 @@ class MusicBot(discord.Client):
         self.blacklist = set(load_file(self.config.blacklist_file))
         self.autoplaylist = load_file(self.config.auto_playlist_file)
         self.downloader = downloader.Downloader(download_folder='audio_cache')
-        self.days = [WeeklyDay(REL.MO, 18, 0),
-                    WeeklyDay(REL.WE, 18, 0),
-                    WeeklyDay(REL.FR, 18, 0)]
+        self.days = [WeeklyDay(REL.MO, 17, 0),
+                    WeeklyDay(REL.WE, 17, 0),
+                    WeeklyDay(REL.FR, 17, 0)]
 
         self.exit_signal = None
         self.init_ok = False
@@ -882,13 +882,18 @@ class MusicBot(discord.Client):
         try:
             now = datetime.now()
 
+                    # self.days = [WeeklyDay(REL.MO, 18, 0),
+                    # WeeklyDay(REL.WE, 18, 0),
+                    # WeeklyDay(REL.FR, 18, 0)]
+
             dates = []
             for x in self.days:
                 dateadd = now+REL.relativedelta(weekday=x.weekday,hour=x.hour,minute=x.minute,second=0)
                 if now>dateadd: dateadd = dateadd+REL.relativedelta(weeks=1)
                 
                 dates.append(dateadd)
-
+            
+            print(dates)
             nextweekly = min([x - now for x in dates])
             return Response(str.format('Time until next weekly pick: {} days, {} hours, {} minutes', nextweekly.days, nextweekly.seconds//3600, (nextweekly.seconds//60)%60), reply=True)
         except Exception as error:
