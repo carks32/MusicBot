@@ -22,7 +22,8 @@ from discord.ext.commands.bot import _get_variable
 from io import BytesIO
 from functools import wraps
 from textwrap import dedent
-from datetime import timedelta
+from datetime import timedelta,datetime
+from dateutil import relativedelta as REL
 from random import choice, shuffle
 from collections import defaultdict
 
@@ -60,6 +61,12 @@ def parse_mb_command(command,message):
     if len(main_param) == 1 and main_param[0] == '':
         return None
     return main_param
+
+class WeeklyDay:
+    def __init__(self, weekday, hour, minute):
+        self.weekday = weekday
+        self.hour = hour
+        self.minute = minute
 
 class SkipState:
     def __init__(self):
@@ -101,6 +108,9 @@ class MusicBot(discord.Client):
         self.blacklist = set(load_file(self.config.blacklist_file))
         self.autoplaylist = load_file(self.config.auto_playlist_file)
         self.downloader = downloader.Downloader(download_folder='audio_cache')
+        self.days = [WeeklyDay(REL.MO, 18, 0),
+                    WeeklyDay(REL.WE, 18, 0),
+                    WeeklyDay(REL.FR, 18, 0)]
 
         self.exit_signal = None
         self.init_ok = False
@@ -861,6 +871,30 @@ class MusicBot(discord.Client):
                             users.append(user_to_append)
         return users,additional_params
 
+
+    async def cmd_wdcountdown(self):
+        """
+        Usage:
+            {command_prefix}wdcountdown
+
+        Tells you when the next weekly pick is drawn.
+        """
+        try:
+            now = datetime.now()
+
+            dates = []
+            for x in self.days:
+                dateadd = now+REL.relativedelta(weekday=x.weekday,hour=x.hour,minute=x.minute,second=0)
+                if now>dateadd: dateadd = dateadd+REL.relativedelta(weeks=1)
+                
+                dates.append(dateadd)
+
+            nextweekly = min([x - now for x in dates])
+            return Response(str.format('Time until next weekly pick: {} days, {} hours, {} minutes', nextweekly.days, nextweekly.seconds//3600, (nextweekly.seconds//60)%60), reply=True)
+        except Exception as error:
+            print(error)
+            return Response("There was a problem getting the date for next weekly.",reply=True)
+    
     async def cmd_chart(self,message,user_mentions=None):
         """
         Usage:
