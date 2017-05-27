@@ -1278,7 +1278,7 @@ class MusicBot(discord.Client):
                     common_artist_len = len(taste_result['common_artists'])
 
                     if common_artist_len == 0:
-                        text = "**{}** and **{}** don't listen to same music.".format(user_display_nameA,user_display_nameB)
+                        text = "**{}** and **{}** don't listen to the same music.".format(user_display_nameA,user_display_nameB)
                     
                     if common_artist_len == 3:
                         artistName1 = taste_result['common_artists'][0]['artist'].item.name
@@ -1455,7 +1455,7 @@ class MusicBot(discord.Client):
                 # Print out the current
                 yt_link = last_winner['yt_link']
                 if yt_link == None:
-                    return Response("The video link doesnt exists yet.")
+                    return Response("This week's album has not yet been selected.")
                 video = self.get_video_from_yt_link(last_winner['yt_link'])
                 if video == None:
                     return Response("There was a problem retrieving the video!")
