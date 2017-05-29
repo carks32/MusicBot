@@ -1219,6 +1219,9 @@ class MusicBot(discord.Client):
         response_text = ""
         procmsg = None
 
+        if len(users) < 1:
+            return Response("There are not enough users to compare.", reply=True, delete_after=30)
+
         if len(users) == 1:
             mb_user = users[0]
             if mb_user["discord_user"].id == message.author.id:
@@ -1230,88 +1233,109 @@ class MusicBot(discord.Client):
                     response_text = "There was a problem with the command."
 
         Ok = False
-        if len(users) != 2:
-            response_text = "There arent enough users to compare! Need 2, got {}".format(len(users))
+
+        # Take first two users
+        discord_userA = self.discord_user_from_mb_command(users[0])
+        lastfm_userA = self.lastfm_user_from_mb_command(users[0])
+
+        discord_userB = self.discord_user_from_mb_command(users[1])
+        lastfm_userB = self.lastfm_user_from_mb_command(users[1])
+
+        user1 = lastfm_userA
+        user2 = lastfm_userB
+
+        if lastfm_userA == None or lastfm_userB == None:
+            response_text = "There was a problem with the command.Could not find Last.fm users."
         else:
-            discord_userA = self.discord_user_from_mb_command(users[0])
-            lastfm_userA = self.lastfm_user_from_mb_command(users[0])
+            try:
+                procmsg = await self.safe_send_message(message.channel,
+                                                       "<:cake:300221990080610305> *Working...* <:cake:300221990080610305>")
 
-            discord_userB = self.discord_user_from_mb_command(users[1])
-            lastfm_userB = self.lastfm_user_from_mb_command(users[1])
+                # User 1
+                user_display_nameA = ""
+                if lastfm_userA != None:
+                    user_display_nameA = lastfm_userA
 
-            user1 = lastfm_userA
-            user2 = lastfm_userB
+                if discord_userA != None:
+                    user_display_nameA = discord_userA.display_name
 
-            if lastfm_userA == None or lastfm_userB == None:
-                response_text = "There was a problem with the command.Could not find Last.fm users."
-            else:
-                try:
-                    procmsg = await self.safe_send_message(message.channel,"<:cake:300221990080610305> *Working...* <:cake:300221990080610305>")
+                user_display_nameB = ""
+                if lastfm_userB != None:
+                    user_display_nameB = lastfm_userB
 
-                    # User 1
-                    user_display_nameA = ""
-                    if lastfm_userA != None:
-                        user_display_nameA = lastfm_userA
+                if discord_userB != None:
+                    user_display_nameB = discord_userB.display_name
 
-                    if discord_userA != None:
-                        user_display_nameA = discord_userA.display_name
+                taste_result = self.lastfm.taste(user1, user2)
+                text = ""
 
-                    user_display_nameB = ""
-                    if lastfm_userB != None:
-                        user_display_nameB = lastfm_userB
+                if taste_result['playCountUser1'] == 0 and taste_result[
+                    'playCountUser2'] == 0:
+                    text = "**{}** and **{}** haven't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(
+                        user_display_nameA, user_display_nameB)
 
-                    if discord_userB != None:
-                        user_display_nameB = discord_userB.display_name
+                if taste_result['playCountUser1'] == 0:
+                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(
+                        user_display_nameA)
 
-                    taste_result = self.lastfm.taste(user1,user2)
-                    text = ""
+                if taste_result['playCountUser2'] == 0:
+                    text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(
+                        user_display_nameB)
 
-                    if taste_result['playCountUser1'] == 0 and taste_result['playCountUser2'] == 0:
-                        text = "**{}** and **{}** haven't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameA,user_display_nameB)
+                common_artist_len = len(taste_result['common_artists'])
 
-                    if taste_result['playCountUser1'] == 0:
-                        text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameA)
+                if common_artist_len == 0:
+                    text = "**{}** and **{}** don't listen to the same music.".format(
+                        user_display_nameA, user_display_nameB)
 
-                    if taste_result['playCountUser2'] == 0:
-                        text = "**{}** hasn't listened to any music yet. <:FeelsMetalHead:279991636144947200>".format(user_display_nameB)
+                if common_artist_len == 3:
+                    artistName1 = taste_result['common_artists'][0][
+                        'artist'].item.name
+                    artistName2 = taste_result['common_artists'][1][
+                        'artist'].item.name
+                    artistName3 = taste_result['common_artists'][2][
+                        'artist'].item.name
 
-                    common_artist_len = len(taste_result['common_artists'])
+                    text = "**{}** and **{}** both listen to **{}**, **{}** and **{}**.".format(
+                        user_display_nameA, user_display_nameB, artistName1,
+                        artistName2, artistName3)
 
-                    if common_artist_len == 0:
-                        text = "**{}** and **{}** don't listen to the same music.".format(user_display_nameA,user_display_nameB)
-                    
-                    if common_artist_len == 3:
-                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
-                        artistName3 = taste_result['common_artists'][2]['artist'].item.name
+                if common_artist_len == 2:
+                    artistName1 = taste_result['common_artists'][0][
+                        'artist'].item.name
+                    artistName2 = taste_result['common_artists'][1][
+                        'artist'].item.name
 
-                        text = "**{}** and **{}** both listen to **{}**, **{}** and **{}**.".format(user_display_nameA,user_display_nameB,artistName1,artistName2,artistName3)
+                    text = "**{}** and **{}** both listen to **{}** and **{}**.".format(
+                        user_display_nameA, user_display_nameB, artistName1,
+                        artistName2)
 
-                    if common_artist_len == 2:
-                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
+                if common_artist_len == 1:
+                    artistName1 = taste_result['common_artists'][0][
+                        'artist'].item.name
+                    text = "**{}** and **{}** both listen to **{}**.".format(
+                        user_display_nameA, user_display_nameB, artistName1)
 
-                        text = "**{}** and **{}** both listen to **{}** and **{}**.".format(user_display_nameA,user_display_nameB,artistName1,artistName2)
+                if common_artist_len > 3:
+                    artistName1 = taste_result['common_artists'][0][
+                        'artist'].item.name
+                    artistName2 = taste_result['common_artists'][1][
+                        'artist'].item.name
+                    artistName3 = taste_result['common_artists'][2][
+                        'artist'].item.name
 
-                    if common_artist_len == 1:
-                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                        text = "**{}** and **{}** both listen to **{}**.".format(user_display_nameA,user_display_nameB,artistName1)
+                    text = "**{}** and **{}** both listen to **{}**, **{}**, **{}** and {} other".format(
+                        user_display_nameA, user_display_nameB, artistName1,
+                        artistName2, artistName3, (common_artist_len - 3))
 
-                    if common_artist_len > 3:
-                        artistName1 = taste_result['common_artists'][0]['artist'].item.name
-                        artistName2 = taste_result['common_artists'][1]['artist'].item.name
-                        artistName3 = taste_result['common_artists'][2]['artist'].item.name
-
-                        text = "**{}** and **{}** both listen to **{}**, **{}**, **{}** and {} other".format(user_display_nameA,user_display_nameB,artistName1,artistName2,artistName3,(common_artist_len - 3))
-
-                        if common_artist_len - 3 == 1:
-                            text += " artist."
-                        else:
-                            text += " artists."
-                    response_text = text
-                    Ok = True
-                except:
-                    pass
+                    if common_artist_len - 3 == 1:
+                        text += " artist."
+                    else:
+                        text += " artists."
+                response_text = text
+                Ok = True
+            except:
+                pass
         
         if Ok:
             await self.delete_message(procmsg)
