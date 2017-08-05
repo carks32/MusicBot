@@ -1,1 +1,1 @@
-worker: ./run.sh
+worker: runbot.bat
